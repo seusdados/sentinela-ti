@@ -1,0 +1,408 @@
+// ============================================================================
+// SENTINELA - Plataforma de Inteligência de Ameaças Corporativas
+// Schema Prisma - Banco de Dados PostgreSQL
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================================
+// ENUMS - Tipos Enumerados
+// ============================================================================
+
+enum PerfilUsuario {
+  ADMINISTRADOR
+  ANALISTA
+  VISUALIZADOR
+}
+
+enum StatusVarredura {
+  AGUARDANDO
+  EXECUTANDO
+  CONCLUIDA
+  FALHOU
+  CANCELADA
+}
+
+enum EscopoVarredura {
+  DOMINIO
+  COMPLETO
+}
+
+enum FonteInformacao {
+  CRTSH
+  URLSCAN
+  LEAKIX
+  VIRUSTOTAL
+  SHODAN
+  OTX
+  ABUSEIPDB
+  PSBDMP
+  HIBP
+  GITHUB
+  GOOGLE_DORKS
+  INTELX
+}
+
+enum StatusExecucaoFonte {
+  AGUARDANDO
+  EXECUTANDO
+  SUCESSO
+  ERRO
+  IGNORADA
+  CHAVE_AUSENTE
+  CACHE
+  TIMEOUT
+  LIMITE_TAXA
+}
+
+enum NivelRisco {
+  INFORMATIVO
+  BAIXO
+  MEDIO
+  ALTO
+  CRITICO
+}
+
+enum TipoEntidade {
+  DOMINIO
+  SUBDOMINIO
+  EMAIL
+  IP
+  URL
+  CODIGO
+  DOCUMENTO
+  CREDENCIAL
+  TEXTO
+}
+
+enum ProvedorApi {
+  HIBP
+  VT
+  LEAKIX
+  SHODAN
+  OTX
+  ABUSEIPDB
+  URLSCAN
+  PSBDMP
+  GITHUB
+  INTELX
+}
+
+enum StatusAchado {
+  ABERTO
+  EM_ANALISE
+  CONFIRMADO
+  FALSO_POSITIVO
+  RESOLVIDO
+}
+
+// ============================================================================
+// MODELOS - Estrutura de Dados
+// ============================================================================
+
+model Organizacao {
+  id              String   @id @default(uuid())
+  nome            String
+  cnpj            String?  @unique
+  setor           String?
+  logotipoUrl     String?  @map("logotipo_url")
+  corPrimaria     String?  @map("cor_primaria") @default("#0ea5e9")
+  criadoEm        DateTime @default(now()) @map("criado_em")
+  atualizadoEm    DateTime @updatedAt @map("atualizado_em")
+
+  membros         Membro[]
+  empresas        Empresa[]
+  chavesApi       ChaveApi[]
+  registrosAuditoria RegistroAuditoria[]
+  definicoesAchado DefinicaoAchado[]
+
+  @@map("organizacoes")
+}
+
+model Usuario {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  nome            String
+  senhaHash       String    @map("senha_hash")
+  ativo           Boolean   @default(true)
+  ultimoAcessoEm  DateTime? @map("ultimo_acesso_em")
+  avatarUrl       String?   @map("avatar_url")
+  criadoEm        DateTime  @default(now()) @map("criado_em")
+  atualizadoEm    DateTime  @updatedAt @map("atualizado_em")
+
+  membros         Membro[]
+  tokensRefresh   TokenRefresh[]
+  empresasCriadas Empresa[]      @relation("EmpresaCriadaPor")
+  varredurasCriadas Varredura[]  @relation("VarreduraCriadaPor")
+  chavesApiCriadas ChaveApi[]    @relation("ChaveApiCriadaPor")
+  registrosAuditoria RegistroAuditoria[]
+
+  @@map("usuarios")
+}
+
+model Membro {
+  id              String        @id @default(uuid())
+  organizacaoId   String        @map("organizacao_id")
+  usuarioId       String        @map("usuario_id")
+  perfil          PerfilUsuario @default(VISUALIZADOR)
+  criadoEm        DateTime      @default(now()) @map("criado_em")
+
+  organizacao     Organizacao   @relation(fields: [organizacaoId], references: [id])
+  usuario         Usuario       @relation(fields: [usuarioId], references: [id])
+
+  @@unique([organizacaoId, usuarioId])
+  @@index([usuarioId])
+  @@map("membros")
+}
+
+model TokenRefresh {
+  id              String   @id @default(uuid())
+  usuarioId       String   @map("usuario_id")
+  tokenHash       String   @unique @map("token_hash")
+  expiraEm        DateTime @map("expira_em")
+  criadoEm        DateTime @default(now()) @map("criado_em")
+
+  usuario         Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@index([usuarioId])
+  @@map("tokens_refresh")
+}
+
+model Empresa {
+  id              String    @id @default(uuid())
+  organizacaoId   String    @map("organizacao_id")
+  nome            String
+  nomeFantasia    String?   @map("nome_fantasia")
+  cnpj            String?
+  setor           String?
+  
+  emailPrincipal  String?   @map("email_principal")
+  emailsSecundarios String[] @default([]) @map("emails_secundarios")
+  telefones       String[]  @default([])
+  
+  possuiConsentimento Boolean   @default(false) @map("possui_consentimento")
+  dataConsentimento   DateTime? @map("data_consentimento")
+  documentoConsentimento String? @map("documento_consentimento")
+  
+  nomeDpo         String?   @map("nome_dpo")
+  emailDpo        String?   @map("email_dpo")
+  
+  nivelRisco      String?   @map("nivel_risco")
+  ativa           Boolean   @default(true)
+  tags            String[]  @default([])
+  observacoes     String?
+  
+  criadoEm        DateTime  @default(now()) @map("criado_em")
+  atualizadoEm    DateTime  @updatedAt @map("atualizado_em")
+  criadoPorId     String?   @map("criado_por_id")
+
+  organizacao     Organizacao     @relation(fields: [organizacaoId], references: [id])
+  criadoPor       Usuario?        @relation("EmpresaCriadaPor", fields: [criadoPorId], references: [id])
+  dominios        DominioEmpresa[]
+  varreduras      Varredura[]
+  monitoramento   MonitoramentoEmpresa?
+
+  @@index([organizacaoId])
+  @@map("empresas")
+}
+
+model DominioEmpresa {
+  id              String   @id @default(uuid())
+  empresaId       String   @map("empresa_id")
+  dominio         String
+  principal       Boolean  @default(false)
+  verificado      Boolean  @default(false)
+  criadoEm        DateTime @default(now()) @map("criado_em")
+
+  empresa         Empresa  @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, dominio])
+  @@index([dominio])
+  @@map("dominios_empresa")
+}
+
+model MonitoramentoEmpresa {
+  id              String    @id @default(uuid())
+  empresaId       String    @unique @map("empresa_id")
+  ativo           Boolean   @default(true)
+  critico         Boolean   @default(false)
+  frequencia      String    @default("diario")
+  ultimaVarreduraEm DateTime? @map("ultima_varredura_em")
+  proximaVarreduraEm DateTime? @map("proxima_varredura_em")
+  criadoEm        DateTime  @default(now()) @map("criado_em")
+  atualizadoEm    DateTime  @updatedAt @map("atualizado_em")
+
+  empresa         Empresa   @relation(fields: [empresaId], references: [id])
+
+  @@map("monitoramento_empresas")
+}
+
+model Varredura {
+  id              String          @id @default(uuid())
+  empresaId       String          @map("empresa_id")
+  criadoPorId     String?         @map("criado_por_id")
+  status          StatusVarredura @default(AGUARDANDO)
+  escopo          EscopoVarredura @default(DOMINIO)
+  
+  dadosEntrada    Json            @map("dados_entrada")
+  iniciadaEm      DateTime?       @map("iniciada_em")
+  concluidaEm     DateTime?       @map("concluida_em")
+  mensagemErro    String?         @map("mensagem_erro")
+  
+  totalAchados    Int             @default(0) @map("total_achados")
+  achadosCriticos Int             @default(0) @map("achados_criticos")
+  achadosAltos    Int             @default(0) @map("achados_altos")
+  achadosMedios   Int             @default(0) @map("achados_medios")
+  achadosBaixos   Int             @default(0) @map("achados_baixos")
+  
+  criadoEm        DateTime        @default(now()) @map("criado_em")
+
+  empresa         Empresa         @relation(fields: [empresaId], references: [id])
+  criadoPor       Usuario?        @relation("VarreduraCriadaPor", fields: [criadoPorId], references: [id])
+  
+  execucoesFonte  ExecucaoFonte[]
+  ocorrenciasAchado OcorrenciaAchado[]
+  relatorio       Relatorio?
+
+  @@index([empresaId])
+  @@index([criadoEm])
+  @@index([status])
+  @@map("varreduras")
+}
+
+model ExecucaoFonte {
+  id              String              @id @default(uuid())
+  varreduraId     String              @map("varredura_id")
+  fonte           FonteInformacao
+  consulta        String
+  status          StatusExecucaoFonte @default(AGUARDANDO)
+  codigoHttp      Int?                @map("codigo_http")
+  duracaoMs       Int?                @map("duracao_ms")
+  itensEncontrados Int?               @map("itens_encontrados")
+  usouCache       Boolean             @default(false) @map("usou_cache")
+  mensagemErro    String?             @map("mensagem_erro")
+  metadados       Json?
+  iniciadaEm      DateTime            @default(now()) @map("iniciada_em")
+  finalizadaEm    DateTime?           @map("finalizada_em")
+
+  varredura       Varredura           @relation(fields: [varreduraId], references: [id])
+
+  @@index([varreduraId])
+  @@index([fonte])
+  @@map("execucoes_fonte")
+}
+
+model DefinicaoAchado {
+  id              String      @id @default(uuid())
+  organizacaoId   String      @map("organizacao_id")
+  impressaoDigital String     @map("impressao_digital")
+  fonte           FonteInformacao
+  nivelRisco      NivelRisco  @map("nivel_risco")
+  tipo            String
+  tipoEntidade    TipoEntidade @map("tipo_entidade")
+  entidade        String
+  titulo          String
+  descricao       String?
+  recomendacao    String?
+  evidencia       Json?
+  primeiraVezEm   DateTime    @default(now()) @map("primeira_vez_em")
+  ultimaVezEm     DateTime    @default(now()) @map("ultima_vez_em")
+  status          StatusAchado @default(ABERTO)
+
+  organizacao     Organizacao @relation(fields: [organizacaoId], references: [id])
+  ocorrencias     OcorrenciaAchado[]
+
+  @@unique([organizacaoId, impressaoDigital])
+  @@index([organizacaoId])
+  @@index([fonte])
+  @@index([nivelRisco])
+  @@index([status])
+  @@map("definicoes_achado")
+}
+
+model OcorrenciaAchado {
+  id              String @id @default(uuid())
+  varreduraId     String @map("varredura_id")
+  definicaoId     String @map("definicao_id")
+
+  varredura       Varredura        @relation(fields: [varreduraId], references: [id])
+  definicao       DefinicaoAchado  @relation(fields: [definicaoId], references: [id])
+
+  @@unique([varreduraId, definicaoId])
+  @@index([varreduraId])
+  @@map("ocorrencias_achado")
+}
+
+model Relatorio {
+  id              String   @id @default(uuid())
+  varreduraId     String   @unique @map("varredura_id")
+  caminhoArquivo  String   @map("caminho_arquivo")
+  hashSha256      String   @unique @map("hash_sha256")
+  tamanhoBytes    Int      @map("tamanho_bytes")
+  criadoEm        DateTime @default(now()) @map("criado_em")
+  metadados       Json?
+
+  varredura       Varredura @relation(fields: [varreduraId], references: [id])
+
+  @@map("relatorios")
+}
+
+model ChaveApi {
+  id              String      @id @default(uuid())
+  organizacaoId   String      @map("organizacao_id")
+  provedor        ProvedorApi
+  segredoCriptografado String @map("segredo_criptografado")
+  ativa           Boolean     @default(true)
+  ultimoUsoEm     DateTime?   @map("ultimo_uso_em")
+  criadoEm        DateTime    @default(now()) @map("criado_em")
+  atualizadoEm    DateTime    @updatedAt @map("atualizado_em")
+  criadoPorId     String?     @map("criado_por_id")
+
+  organizacao     Organizacao @relation(fields: [organizacaoId], references: [id])
+  criadoPor       Usuario?    @relation("ChaveApiCriadaPor", fields: [criadoPorId], references: [id])
+
+  @@unique([organizacaoId, provedor])
+  @@index([organizacaoId])
+  @@index([provedor])
+  @@map("chaves_api")
+}
+
+model CacheAmeaca {
+  id              String          @id @default(uuid())
+  fonte           FonteInformacao
+  chave           String          @unique
+  resposta        Json
+  expiraEm        DateTime        @map("expira_em")
+  criadoEm        DateTime        @default(now()) @map("criado_em")
+
+  @@index([expiraEm])
+  @@map("cache_ameaca")
+}
+
+model RegistroAuditoria {
+  id              String   @id @default(uuid())
+  organizacaoId   String   @map("organizacao_id")
+  usuarioId       String?  @map("usuario_id")
+  acao            String
+  tipoEntidade    String?  @map("tipo_entidade")
+  entidadeId      String?  @map("entidade_id")
+  ip              String?
+  userAgent       String?  @map("user_agent")
+  metadados       Json?
+  criadoEm        DateTime @default(now()) @map("criado_em")
+
+  organizacao     Organizacao @relation(fields: [organizacaoId], references: [id])
+  usuario         Usuario?    @relation(fields: [usuarioId], references: [id])
+
+  @@index([organizacaoId])
+  @@index([criadoEm])
+  @@map("registros_auditoria")
+}
