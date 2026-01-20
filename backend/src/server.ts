@@ -16,7 +16,7 @@ import { hashSenha, verificarSenha } from './utils/password';
 import { sha256Hex } from './utils/crypto';
 import { salvarChaveApi, listarChavesApi, removerChaveApi, PROVEDORES_INFO } from './services/chaveApiService';
 import { obterResumoExecucoes } from './services/execucaoFonteService';
-import { gerarRelatorioPDF, calcularScoreRisco } from './services/pdfService';
+import { gerarRelatorioPDF } from './services/pdfService';
 import { StatusVarredura, NivelRisco, ProvedorApi, PerfilUsuario } from '@prisma/client';
 
 const app = express();

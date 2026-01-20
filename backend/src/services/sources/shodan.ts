@@ -23,13 +23,19 @@ interface ShodanMatch {
   transport?: string;
   product?: string;
   version?: string;
+  cpe?: string[];
   org?: string;
   asn?: string;
   isp?: string;
   data?: string;
   hostnames?: string[];
   domains?: string[];
-  vulns?: string[];
+  vulns?: Record<string, {
+    cvss?: number;
+    references?: string[];
+    summary?: string;
+    verified?: boolean;
+  }>;
   tags?: string[];
   ssl?: {
     cert?: {
@@ -37,9 +43,11 @@ interface ShodanMatch {
       issuer?: { CN?: string; O?: string };
       expires?: string;
       fingerprint?: { sha256?: string };
+      serial?: number;
     };
-    cipher?: { name?: string; version?: string };
+    cipher?: { name?: string; version?: string; bits?: number };
     versions?: string[];
+    chain?: string[];
   };
   location?: {
     country_code?: string;
@@ -48,15 +56,22 @@ interface ShodanMatch {
     city?: string;
     latitude?: number;
     longitude?: number;
+    postal_code?: string;
   };
   http?: {
     server?: string;
     title?: string;
     status?: number;
     redirects?: { location?: string }[];
+    host?: string;
+    html_hash?: number;
+    robots_hash?: number;
+    sitemap_hash?: number;
+    waf?: string;
   };
   _shodan?: {
     module?: string;
+    crawler?: string;
   };
 }
 
@@ -81,6 +96,66 @@ interface ShodanHostInfo {
   vulns?: string[];
   tags?: string[];
   data: ShodanMatch[];
+}
+
+// Base de dados de CVEs conhecidas com CVSS scores
+const CVE_DATABASE: Record<string, { cvss: number; severity: string; description: string; exploited: boolean }> = {
+  'CVE-2021-44228': { cvss: 10.0, severity: 'CRITICAL', description: 'Log4Shell - Apache Log4j RCE', exploited: true },
+  'CVE-2021-45046': { cvss: 9.0, severity: 'CRITICAL', description: 'Log4j DoS/RCE', exploited: true },
+  'CVE-2021-26855': { cvss: 9.8, severity: 'CRITICAL', description: 'ProxyLogon - Exchange Server RCE', exploited: true },
+  'CVE-2021-27065': { cvss: 7.8, severity: 'HIGH', description: 'Exchange Server Post-Auth RCE', exploited: true },
+  'CVE-2020-1472': { cvss: 10.0, severity: 'CRITICAL', description: 'Zerologon - Netlogon Privilege Escalation', exploited: true },
+  'CVE-2019-19781': { cvss: 9.8, severity: 'CRITICAL', description: 'Citrix ADC/Gateway RCE', exploited: true },
+  'CVE-2021-34473': { cvss: 9.8, severity: 'CRITICAL', description: 'ProxyShell - Exchange Server RCE', exploited: true },
+  'CVE-2021-34523': { cvss: 9.8, severity: 'CRITICAL', description: 'ProxyShell - Exchange Privilege Escalation', exploited: true },
+  'CVE-2021-31207': { cvss: 7.2, severity: 'HIGH', description: 'ProxyShell - Exchange Security Bypass', exploited: true },
+  'CVE-2021-26084': { cvss: 9.8, severity: 'CRITICAL', description: 'Confluence Server OGNL Injection', exploited: true },
+  'CVE-2022-22965': { cvss: 9.8, severity: 'CRITICAL', description: 'Spring4Shell - Spring Framework RCE', exploited: true },
+  'CVE-2022-26134': { cvss: 9.8, severity: 'CRITICAL', description: 'Confluence Server OGNL Injection', exploited: true },
+  'CVE-2023-34362': { cvss: 9.8, severity: 'CRITICAL', description: 'MOVEit Transfer SQL Injection', exploited: true },
+  'CVE-2023-0669': { cvss: 7.2, severity: 'HIGH', description: 'GoAnywhere MFT RCE', exploited: true },
+  'CVE-2023-27350': { cvss: 9.8, severity: 'CRITICAL', description: 'PaperCut MF/NG RCE', exploited: true },
+  'CVE-2023-4966': { cvss: 9.4, severity: 'CRITICAL', description: 'Citrix Bleed - Session Hijacking', exploited: true },
+  'CVE-2024-3400': { cvss: 10.0, severity: 'CRITICAL', description: 'PAN-OS GlobalProtect RCE', exploited: true },
+  'CVE-2019-0708': { cvss: 9.8, severity: 'CRITICAL', description: 'BlueKeep - RDP RCE', exploited: true },
+  'CVE-2017-0144': { cvss: 8.1, severity: 'HIGH', description: 'EternalBlue - SMB RCE (WannaCry)', exploited: true },
+  'CVE-2020-0796': { cvss: 10.0, severity: 'CRITICAL', description: 'SMBGhost - SMBv3 RCE', exploited: true },
+};
+
+/**
+ * Obtém informações detalhadas de uma CVE
+ */
+function getCVEInfo(cve: string): { cvss: number; severity: string; description: string; exploited: boolean } | null {
+  // Primeiro verifica na base local
+  if (CVE_DATABASE[cve]) {
+    return CVE_DATABASE[cve];
+  }
+  
+  // Tenta extrair CVSS do padrão CVE-YYYY-NNNNN
+  const match = cve.match(/CVE-(\d{4})-(\d+)/);
+  if (match) {
+    const year = parseInt(match[1]);
+    // CVEs mais recentes tendem a ser mais críticas se detectadas pelo Shodan
+    const estimatedCvss = year >= 2022 ? 8.0 : year >= 2020 ? 7.0 : 6.0;
+    return {
+      cvss: estimatedCvss,
+      severity: estimatedCvss >= 9.0 ? 'CRITICAL' : estimatedCvss >= 7.0 ? 'HIGH' : 'MEDIUM',
+      description: `Vulnerabilidade ${cve} detectada`,
+      exploited: false
+    };
+  }
+  
+  return null;
+}
+
+/**
+ * Classifica o nível de risco baseado no CVSS
+ */
+function cvssToNivelRisco(cvss: number): NivelRisco {
+  if (cvss >= 9.0) return NivelRisco.CRITICO;
+  if (cvss >= 7.0) return NivelRisco.ALTO;
+  if (cvss >= 4.0) return NivelRisco.MEDIO;
+  return NivelRisco.BAIXO;
 }
 
 export async function buscarInfraestrutura(dominio: string, chaveApi: string): Promise<ResultadoFonte> {
@@ -117,19 +192,59 @@ export async function buscarInfraestrutura(dominio: string, chaveApi: string): P
   Object.entries(porIP).forEach(([ip, servicos]) => {
     const portas = servicos.map(s => s.port).sort((a, b) => a - b);
     const produtos = [...new Set(servicos.map(s => s.product || s._shodan?.module).filter(Boolean))];
-    const vulnerabilidades = [...new Set(servicos.flatMap(s => s.vulns || []))];
     const hostnames = [...new Set(servicos.flatMap(s => s.hostnames || []))];
     const location = servicos[0].location;
     const org = servicos[0].org;
     const asn = servicos[0].asn;
     const isp = servicos[0].isp;
     
+    // Processar vulnerabilidades com detalhes de CVSS
+    const vulnerabilidadesDetalhadas: Array<{
+      cve: string;
+      cvss: number;
+      severity: string;
+      description: string;
+      exploited: boolean;
+      porta: number;
+      produto?: string;
+      versao?: string;
+    }> = [];
+    
+    servicos.forEach(s => {
+      if (s.vulns) {
+        Object.entries(s.vulns).forEach(([cve, info]) => {
+          const cveInfo = getCVEInfo(cve);
+          vulnerabilidadesDetalhadas.push({
+            cve,
+            cvss: info.cvss || cveInfo?.cvss || 5.0,
+            severity: cveInfo?.severity || (info.cvss && info.cvss >= 9.0 ? 'CRITICAL' : 'HIGH'),
+            description: info.summary || cveInfo?.description || 'Vulnerabilidade detectada',
+            exploited: cveInfo?.exploited || false,
+            porta: s.port,
+            produto: s.product,
+            versao: s.version
+          });
+        });
+      }
+    });
+    
+    // Ordenar por CVSS (mais críticas primeiro)
+    vulnerabilidadesDetalhadas.sort((a, b) => b.cvss - a.cvss);
+    
     // Determinar nível de risco
-    const temVulnerabilidades = vulnerabilidades.length > 0;
+    const temVulnerabilidades = vulnerabilidadesDetalhadas.length > 0;
+    const temVulnCritica = vulnerabilidadesDetalhadas.some(v => v.cvss >= 9.0);
+    const temVulnExplorada = vulnerabilidadesDetalhadas.some(v => v.exploited);
     const temServicosAltoRisco = servicos.some(s => isServicoAltoRisco(s.port, s.product || ''));
     
     // Usar apenas CRITICO ou ALTO para achados significativos
-    const nivelRisco = temVulnerabilidades ? NivelRisco.CRITICO : NivelRisco.ALTO;
+    let nivelRisco = NivelRisco.ALTO;
+    if (temVulnCritica || temVulnExplorada) {
+      nivelRisco = NivelRisco.CRITICO;
+    } else if (temVulnerabilidades) {
+      nivelRisco = vulnerabilidadesDetalhadas[0].cvss >= 7.0 ? NivelRisco.CRITICO : NivelRisco.ALTO;
+    }
+    
     const tipo = temVulnerabilidades ? 'vulnerabilidades_detectadas' : 
                  temServicosAltoRisco ? 'servicos_alto_risco' : 'infraestrutura_exposta';
     
@@ -139,15 +254,31 @@ export async function buscarInfraestrutura(dominio: string, chaveApi: string): P
     
     // Verificar certificados SSL
     const certProblemas: string[] = [];
+    const certDetalhes: Array<{
+      porta: number;
+      emissor: string;
+      expiracao: string;
+      diasRestantes: number;
+      versoes: string[];
+      cipher: string;
+      bits: number;
+      problemas: string[];
+    }> = [];
+    
     servicosComSSL.forEach(s => {
+      const problemas: string[] = [];
+      let diasRestantes = 999;
+      
       if (s.ssl?.cert?.expires) {
         const expiracao = new Date(s.ssl.cert.expires);
         const agora = new Date();
-        const diasRestantes = Math.floor((expiracao.getTime() - agora.getTime()) / (1000 * 60 * 60 * 24));
+        diasRestantes = Math.floor((expiracao.getTime() - agora.getTime()) / (1000 * 60 * 60 * 24));
         
         if (diasRestantes < 0) {
+          problemas.push('Certificado expirado');
           certProblemas.push(`Certificado expirado na porta ${s.port}`);
         } else if (diasRestantes < 30) {
+          problemas.push(`Expira em ${diasRestantes} dias`);
           certProblemas.push(`Certificado expira em ${diasRestantes} dias (porta ${s.port})`);
         }
       }
@@ -158,21 +289,46 @@ export async function buscarInfraestrutura(dominio: string, chaveApi: string): P
           v.includes('SSLv2') || v.includes('SSLv3') || v.includes('TLSv1.0') || v.includes('TLSv1.1')
         );
         if (versoesInseguras.length > 0) {
+          problemas.push(`TLS inseguro: ${versoesInseguras.join(', ')}`);
           certProblemas.push(`Versões TLS inseguras na porta ${s.port}: ${versoesInseguras.join(', ')}`);
         }
       }
+      
+      // Verificar cipher fraco
+      if (s.ssl?.cipher?.bits && s.ssl.cipher.bits < 128) {
+        problemas.push(`Cipher fraco: ${s.ssl.cipher.bits} bits`);
+      }
+      
+      certDetalhes.push({
+        porta: s.port,
+        emissor: s.ssl?.cert?.issuer?.O || 'Desconhecido',
+        expiracao: s.ssl?.cert?.expires || 'N/A',
+        diasRestantes,
+        versoes: s.ssl?.versions || [],
+        cipher: s.ssl?.cipher?.name || 'N/A',
+        bits: s.ssl?.cipher?.bits || 0,
+        problemas
+      });
     });
     
+    // Construir descrição detalhada
     const descricao = `O IP ${ip} possui ${portas.length} porta(s) aberta(s): ${portas.join(', ')}. ` +
       `Serviços identificados: ${produtos.join(', ') || 'N/A'}. ` +
-      `${vulnerabilidades.length > 0 ? `⚠️ ${vulnerabilidades.length} CVE(s) detectada(s). ` : ''}` +
+      `${vulnerabilidadesDetalhadas.length > 0 ? 
+        `⚠️ ${vulnerabilidadesDetalhadas.length} CVE(s) detectada(s), ` +
+        `${vulnerabilidadesDetalhadas.filter(v => v.cvss >= 9.0).length} crítica(s), ` +
+        `${vulnerabilidadesDetalhadas.filter(v => v.exploited).length} ativamente explorada(s). ` : ''}` +
       `${servicosAltoRisco.length > 0 ? `${servicosAltoRisco.length} serviço(s) de alto risco. ` : ''}` +
       `${certProblemas.length > 0 ? `Problemas de certificado: ${certProblemas.length}. ` : ''}` +
-      `Localização: ${location?.city || 'N/A'}, ${location?.country_name || 'N/A'}.`;
+      `Localização: ${location?.city || 'N/A'}, ${location?.country_name || 'N/A'} (${org || 'N/A'}).`;
     
     let recomendacao = '';
-    if (vulnerabilidades.length > 0) {
-      recomendacao = 'CRÍTICO: Aplique patches de segurança imediatamente para as CVEs detectadas. ';
+    if (temVulnExplorada) {
+      recomendacao = 'URGENTE: CVEs ativamente exploradas detectadas. Aplique patches IMEDIATAMENTE ou isole os sistemas. ';
+    } else if (temVulnCritica) {
+      recomendacao = 'CRÍTICO: Aplique patches de segurança imediatamente para as CVEs críticas detectadas. ';
+    } else if (vulnerabilidadesDetalhadas.length > 0) {
+      recomendacao = 'Aplique patches de segurança para as vulnerabilidades detectadas. ';
     }
     if (servicosAltoRisco.length > 0) {
       recomendacao += 'Restrinja acesso aos serviços de alto risco por firewall ou VPN. ';
@@ -190,11 +346,13 @@ export async function buscarInfraestrutura(dominio: string, chaveApi: string): P
       tipo,
       tipoEntidade: TipoEntidade.IP,
       entidade: ip,
-      titulo: `Infraestrutura Exposta: ${ip} (${portas.length} portas)`,
+      titulo: `Infraestrutura Exposta: ${ip} (${portas.length} portas${vulnerabilidadesDetalhadas.length > 0 ? `, ${vulnerabilidadesDetalhadas.length} CVEs` : ''})`,
       descricao,
       recomendacao,
       evidencia: {
         ip,
+        
+        // Portas e serviços
         portasAbertas: portas,
         totalPortas: portas.length,
         servicos: servicos.map(s => ({
@@ -202,21 +360,32 @@ export async function buscarInfraestrutura(dominio: string, chaveApi: string): P
           protocolo: s.transport || 'tcp',
           produto: s.product || s._shodan?.module,
           versao: s.version,
-          banner: s.data ? s.data.substring(0, 300) : undefined,
+          cpe: s.cpe,
+          banner: s.data ? s.data.substring(0, 500) : undefined,
           http: s.http ? {
             servidor: s.http.server,
             titulo: s.http.title,
             status: s.http.status,
-          } : undefined,
-          ssl: s.ssl ? {
-            emissor: s.ssl.cert?.issuer?.O,
-            expiracao: s.ssl.cert?.expires,
-            versoes: s.ssl.versions,
-            cipher: s.ssl.cipher?.name,
+            waf: s.http.waf,
           } : undefined,
         })),
-        vulnerabilidades: vulnerabilidades.slice(0, 20),
-        totalCVEs: vulnerabilidades.length,
+        
+        // Vulnerabilidades com CVSS
+        vulnerabilidades: vulnerabilidadesDetalhadas.slice(0, 30),
+        totalCVEs: vulnerabilidadesDetalhadas.length,
+        cvesExploradas: vulnerabilidadesDetalhadas.filter(v => v.exploited).map(v => v.cve),
+        cvesCriticas: vulnerabilidadesDetalhadas.filter(v => v.cvss >= 9.0).map(v => ({
+          cve: v.cve,
+          cvss: v.cvss,
+          description: v.description
+        })),
+        cvssMaximo: vulnerabilidadesDetalhadas.length > 0 ? vulnerabilidadesDetalhadas[0].cvss : 0,
+        
+        // SSL/TLS
+        certificados: certDetalhes,
+        problemasSSL: certProblemas,
+        
+        // Geolocalização
         hostnames,
         organizacao: org,
         asn,
@@ -226,44 +395,54 @@ export async function buscarInfraestrutura(dominio: string, chaveApi: string): P
           codigoPais: location.country_code,
           cidade: location.city,
           regiao: location.region_code,
+          codigoPostal: location.postal_code,
           latitude: location.latitude,
           longitude: location.longitude,
         } : undefined,
-        problemasSSL: certProblemas,
+        
+        // Serviços de alto risco
         servicosAltoRisco: servicosAltoRisco.map(s => ({
           porta: s.port,
           produto: s.product,
-          motivo: getDescricaoServicoRisco(s.port, s.product || '', ip).desc.substring(0, 100),
+          versao: s.version,
+          motivo: getDescricaoServicoRisco(s.port, s.product || '', ip).desc.substring(0, 150),
         })),
       },
     });
   });
   
-  // Adicionar achados individuais para vulnerabilidades críticas
+  // Adicionar achados individuais para vulnerabilidades críticas exploradas
   matches.forEach(match => {
-    if (match.vulns && match.vulns.length > 0) {
-      match.vulns.forEach(cve => {
-        // Apenas CVEs críticas conhecidas
-        const cveCriticas = ['CVE-2021-44228', 'CVE-2021-26855', 'CVE-2020-1472', 'CVE-2019-19781', 'CVE-2021-34473'];
-        if (cveCriticas.some(c => cve.includes(c))) {
+    if (match.vulns) {
+      Object.entries(match.vulns).forEach(([cve, info]) => {
+        const cveInfo = getCVEInfo(cve);
+        if (cveInfo?.exploited || (info.cvss && info.cvss >= 9.5)) {
           achados.push({
             fonte: FonteInformacao.SHODAN,
             nivelRisco: NivelRisco.CRITICO,
-            tipo: 'cve_critica',
+            tipo: 'cve_critica_explorada',
             tipoEntidade: TipoEntidade.IP,
             entidade: match.ip_str,
-            titulo: `CVE Crítica Detectada: ${cve}`,
+            titulo: `🚨 CVE Ativamente Explorada: ${cve} (CVSS ${cveInfo?.cvss || info.cvss || 'N/A'})`,
             descricao: `A vulnerabilidade ${cve} foi detectada no serviço ${match.product || 'desconhecido'} ` +
-              `na porta ${match.port} do IP ${match.ip_str}. Esta é uma vulnerabilidade de alto impacto ` +
-              `frequentemente explorada por atacantes.`,
+              `versão ${match.version || 'N/A'} na porta ${match.port} do IP ${match.ip_str}. ` +
+              `${cveInfo?.description || info.summary || 'Esta é uma vulnerabilidade de alto impacto'}. ` +
+              `${cveInfo?.exploited ? 'ATENÇÃO: Esta CVE é conhecida por ser ATIVAMENTE EXPLORADA por atacantes.' : ''}`,
             recomendacao: 'URGENTE: Esta CVE é conhecida por ser ativamente explorada. ' +
-              'Aplique o patch imediatamente ou isole o sistema afetado.',
+              'Aplique o patch imediatamente ou isole o sistema afetado. ' +
+              'Verifique logs para sinais de comprometimento.',
             evidencia: {
               cve,
+              cvss: cveInfo?.cvss || info.cvss,
+              severity: cveInfo?.severity,
+              description: cveInfo?.description || info.summary,
+              exploited: cveInfo?.exploited,
+              references: info.references,
               ip: match.ip_str,
               porta: match.port,
               produto: match.product,
               versao: match.version,
+              cpe: match.cpe,
             },
           });
         }
@@ -278,7 +457,10 @@ export async function buscarInfraestrutura(dominio: string, chaveApi: string): P
       total: resposta.dados.total,
       ipsUnicos: Object.keys(porIP).length,
       portasUnicas: [...new Set(matches.map(m => m.port))].length,
-      totalCVEs: [...new Set(matches.flatMap(m => m.vulns || []))].length,
+      totalCVEs: [...new Set(matches.flatMap(m => Object.keys(m.vulns || {})))].length,
+      cvesExploradas: matches.flatMap(m => 
+        Object.keys(m.vulns || {}).filter(cve => getCVEInfo(cve)?.exploited)
+      ).length,
     },
   };
 }
@@ -317,13 +499,21 @@ function isServicoAltoRisco(porta: number, produto: string): boolean {
     9042,  // Cassandra
     2181,  // Zookeeper
     8080,  // HTTP alternativo (comum em apps vulneráveis)
+    445,   // SMB
+    139,   // NetBIOS
+    1521,  // Oracle
+    5601,  // Kibana
+    9000,  // SonarQube/PHP-FPM
+    8443,  // HTTPS alternativo
   ];
   
   const produtosAltoRisco = [
     'mysql', 'postgresql', 'postgres', 'mongodb', 'redis',
     'elasticsearch', 'memcached', 'ftp', 'telnet', 'vnc',
     'mssql', 'couchdb', 'cassandra', 'zookeeper', 'jenkins',
-    'phpmyadmin', 'adminer', 'webmin',
+    'phpmyadmin', 'adminer', 'webmin', 'kibana', 'grafana',
+    'sonarqube', 'gitlab', 'jira', 'confluence', 'bitbucket',
+    'oracle', 'smb', 'netbios', 'rdp', 'remote desktop',
   ];
   
   const produtoLower = produto.toLowerCase();
@@ -377,7 +567,7 @@ function getDescricaoServicoRisco(porta: number, produto: string, ip: string): {
     };
   }
   
-  if (porta === 3389 || produtoLower.includes('rdp')) {
+  if (porta === 3389 || produtoLower.includes('rdp') || produtoLower.includes('remote desktop')) {
     return {
       desc: `O serviço de Área de Trabalho Remota (RDP) está exposto na internet (${ip}:${porta}). RDP exposto é um dos vetores mais explorados por ransomware e outros malwares.`,
       rec: 'URGENTE: Nunca exponha RDP diretamente na internet. Utilize VPN ou Azure AD Application Proxy. Implemente Network Level Authentication (NLA) e MFA.',
@@ -388,6 +578,13 @@ function getDescricaoServicoRisco(porta: number, produto: string, ip: string): {
     return {
       desc: `O servidor FTP está exposto na internet (${ip}:${porta}). FTP tradicional transmite credenciais em texto claro e pode permitir acesso anônimo se mal configurado.`,
       rec: 'Migre para SFTP (SSH File Transfer Protocol) ou FTPS. Se FTP for necessário, desabilite acesso anônimo e utilize credenciais fortes.',
+    };
+  }
+  
+  if (porta === 445 || porta === 139 || produtoLower.includes('smb')) {
+    return {
+      desc: `O serviço SMB/CIFS está exposto na internet (${ip}:${porta}). SMB exposto é extremamente perigoso e foi usado em ataques como WannaCry e NotPetya.`,
+      rec: 'URGENTE: SMB nunca deve estar exposto na internet. Bloqueie as portas 445 e 139 no firewall de borda imediatamente.',
     };
   }
   

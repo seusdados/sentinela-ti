@@ -40,6 +40,16 @@ interface BreachInfo {
   IsSensitive: boolean;
   IsRetired: boolean;
   IsSpamList: boolean;
+  IsMalware: boolean;
+  IsSubscriptionFree: boolean;
+}
+
+interface PasteInfo {
+  Source: string;
+  Id: string;
+  Title: string;
+  Date: string;
+  EmailCount: number;
 }
 
 // Padrões comuns de e-mail corporativo
@@ -72,6 +82,112 @@ const PADROES_EMAIL = [
   'no-reply',
   'newsletter',
 ];
+
+// Classes de dados críticos que aumentam o risco
+const DADOS_CRITICOS = [
+  'Passwords',
+  'Credit cards',
+  'Bank account numbers',
+  'Social security numbers',
+  'Financial data',
+  'Private messages',
+  'Health records',
+  'Government issued IDs',
+  'Passport numbers',
+  'Tax IDs',
+];
+
+// Classes de dados sensíveis
+const DADOS_SENSIVEIS = [
+  'Dates of birth',
+  'Phone numbers',
+  'Physical addresses',
+  'Biometric data',
+  'Sexual preferences',
+  'Political views',
+  'Religious beliefs',
+  'Ethnic origins',
+];
+
+/**
+ * Calcula o score de risco de um vazamento
+ */
+function calcularScoreVazamento(breach: BreachInfo): {
+  score: number;
+  fatores: string[];
+} {
+  let score = 0;
+  const fatores: string[] = [];
+  
+  // Verificado vs não verificado
+  if (breach.IsVerified) {
+    score += 20;
+    fatores.push('Vazamento verificado');
+  }
+  
+  // Tamanho do vazamento
+  if (breach.PwnCount > 100000000) {
+    score += 30;
+    fatores.push(`Mega vazamento: ${(breach.PwnCount / 1000000).toFixed(0)}M registros`);
+  } else if (breach.PwnCount > 10000000) {
+    score += 25;
+    fatores.push(`Grande vazamento: ${(breach.PwnCount / 1000000).toFixed(1)}M registros`);
+  } else if (breach.PwnCount > 1000000) {
+    score += 20;
+    fatores.push(`Vazamento significativo: ${(breach.PwnCount / 1000000).toFixed(1)}M registros`);
+  } else if (breach.PwnCount > 100000) {
+    score += 15;
+    fatores.push(`Vazamento médio: ${(breach.PwnCount / 1000).toFixed(0)}K registros`);
+  } else {
+    score += 10;
+    fatores.push(`Vazamento pequeno: ${breach.PwnCount.toLocaleString('pt-BR')} registros`);
+  }
+  
+  // Tipos de dados vazados
+  const classesDados = breach.DataClasses || [];
+  
+  const dadosCriticosPresentes = classesDados.filter(d => DADOS_CRITICOS.includes(d));
+  if (dadosCriticosPresentes.length > 0) {
+    score += 25;
+    fatores.push(`Dados críticos: ${dadosCriticosPresentes.map(traduzirClasseDados).join(', ')}`);
+  }
+  
+  const dadosSensiveisPresentes = classesDados.filter(d => DADOS_SENSIVEIS.includes(d));
+  if (dadosSensiveisPresentes.length > 0) {
+    score += 15;
+    fatores.push(`Dados sensíveis: ${dadosSensiveisPresentes.map(traduzirClasseDados).join(', ')}`);
+  }
+  
+  // Vazamento sensível (conteúdo adulto, etc.)
+  if (breach.IsSensitive) {
+    score += 10;
+    fatores.push('Vazamento marcado como sensível');
+  }
+  
+  // Idade do vazamento (mais recente = mais risco)
+  const dataVazamento = new Date(breach.BreachDate);
+  const agora = new Date();
+  const diasDesdeVazamento = Math.floor((agora.getTime() - dataVazamento.getTime()) / (1000 * 60 * 60 * 24));
+  
+  if (diasDesdeVazamento < 180) {
+    score += 15;
+    fatores.push('Vazamento recente (< 6 meses)');
+  } else if (diasDesdeVazamento < 365) {
+    score += 10;
+    fatores.push('Vazamento no último ano');
+  } else if (diasDesdeVazamento < 730) {
+    score += 5;
+    fatores.push('Vazamento nos últimos 2 anos');
+  }
+  
+  // Malware envolvido
+  if (breach.IsMalware) {
+    score += 20;
+    fatores.push('Dados obtidos via malware');
+  }
+  
+  return { score: Math.min(score, 100), fatores };
+}
 
 export async function verificarVazamentosEmail(email: string, chaveApi: string): Promise<ResultadoFonte> {
   const url = `https://haveibeenpwned.com/api/v3/breachedaccount/${encodeURIComponent(email)}?truncateResponse=false`;
@@ -107,40 +223,77 @@ export async function verificarVazamentosEmail(email: string, chaveApi: string):
   
   const achados: AchadoCandidato[] = [];
   
+  // Ordenar por data (mais recente primeiro)
+  breaches.sort((a, b) => new Date(b.BreachDate).getTime() - new Date(a.BreachDate).getTime());
+  
   for (const breach of breaches) {
-    // Determinar nível de risco baseado no tipo de dados vazados
+    // Calcular score de risco
+    const { score, fatores } = calcularScoreVazamento(breach);
+    
+    // Determinar nível de risco baseado no score
     const classesDados = breach.DataClasses || [];
+    const temSenhas = classesDados.includes('Passwords');
+    const temDadosCriticos = classesDados.some(d => DADOS_CRITICOS.includes(d));
     
-    const dadosCriticos = ['Passwords', 'Credit cards', 'Bank account numbers', 'Social security numbers'];
-    
-    // Vazamentos com dados críticos ou grandes = CRITICO, senão ALTO
-    const isCritico = classesDados.some(d => dadosCriticos.includes(d)) || 
-                      (breach.IsVerified && breach.PwnCount > 1000000);
-    const nivelRisco = isCritico ? NivelRisco.CRITICO : NivelRisco.ALTO;
+    let nivelRisco = NivelRisco.ALTO;
+    if (score >= 70 || temDadosCriticos || (temSenhas && breach.IsVerified)) {
+      nivelRisco = NivelRisco.CRITICO;
+    }
     
     // Traduzir classes de dados
     const dadosVazados = classesDados.map(traduzirClasseDados).join(', ');
     
-    // Construir descrição
+    // Calcular tempo desde o vazamento
+    const dataVazamento = new Date(breach.BreachDate);
+    const agora = new Date();
+    const diasDesdeVazamento = Math.floor((agora.getTime() - dataVazamento.getTime()) / (1000 * 60 * 60 * 24));
+    const tempoDesdeVazamento = diasDesdeVazamento < 30 ? `${diasDesdeVazamento} dias` :
+                                diasDesdeVazamento < 365 ? `${Math.floor(diasDesdeVazamento / 30)} meses` :
+                                `${Math.floor(diasDesdeVazamento / 365)} anos`;
+    
+    // Construir descrição detalhada
     let descricao = `O e-mail ${email} foi encontrado no vazamento "${breach.Title}" (${breach.Name}). `;
-    descricao += `Este vazamento ocorreu em ${formatarData(breach.BreachDate)} e afetou ${breach.PwnCount.toLocaleString('pt-BR')} contas. `;
+    descricao += `Este vazamento ocorreu em ${formatarData(breach.BreachDate)} (há ${tempoDesdeVazamento}) `;
+    descricao += `e afetou ${breach.PwnCount.toLocaleString('pt-BR')} contas. `;
     
     if (dadosVazados) {
       descricao += `Tipos de dados expostos: ${dadosVazados}. `;
     }
     
-    if (breach.IsSensitive) {
-      descricao += `ATENÇÃO: Este é um vazamento marcado como sensível, o que pode indicar conteúdo adulto ou outras informações particularmente privadas. `;
+    if (breach.IsVerified) {
+      descricao += `Este vazamento foi VERIFICADO pelo HIBP. `;
     }
     
-    // Construir recomendação
+    if (breach.IsSensitive) {
+      descricao += `ATENÇÃO: Este é um vazamento marcado como sensível. `;
+    }
+    
+    if (breach.IsMalware) {
+      descricao += `ATENÇÃO: Dados obtidos através de malware/infostealer. `;
+    }
+    
+    descricao += `Score de risco: ${score}/100.`;
+    
+    // Construir recomendação detalhada
     let recomendacao = '';
-    if (classesDados.includes('Passwords')) {
-      recomendacao = 'URGENTE: A senha deste e-mail foi exposta. O usuário deve alterar imediatamente a senha deste e-mail E de qualquer outro serviço onde use a mesma senha. ';
-      recomendacao += 'Recomenda-se habilitar autenticação em dois fatores (2FA) e utilizar um gerenciador de senhas.';
+    if (temSenhas) {
+      recomendacao = 'URGENTE: A senha deste e-mail foi exposta. O usuário deve: ';
+      recomendacao += '1) Alterar IMEDIATAMENTE a senha deste e-mail; ';
+      recomendacao += '2) Alterar senhas de TODOS os serviços onde usa a mesma senha; ';
+      recomendacao += '3) Habilitar autenticação em dois fatores (2FA); ';
+      recomendacao += '4) Utilizar um gerenciador de senhas; ';
+      recomendacao += '5) Verificar acessos recentes não autorizados.';
+    } else if (temDadosCriticos) {
+      recomendacao = 'CRÍTICO: Dados sensíveis foram expostos. O usuário deve: ';
+      recomendacao += '1) Monitorar extratos bancários e cartões de crédito; ';
+      recomendacao += '2) Considerar congelamento de crédito; ';
+      recomendacao += '3) Estar atento a tentativas de fraude; ';
+      recomendacao += '4) Habilitar alertas de transações.';
     } else {
-      recomendacao = 'Embora senhas não tenham sido expostas neste vazamento específico, o usuário deve estar atento a tentativas de phishing direcionado. ';
-      recomendacao += 'Considere habilitar autenticação em dois fatores (2FA) por precaução.';
+      recomendacao = 'Embora senhas não tenham sido expostas neste vazamento específico, o usuário deve: ';
+      recomendacao += '1) Estar atento a tentativas de phishing direcionado; ';
+      recomendacao += '2) Não clicar em links suspeitos; ';
+      recomendacao += '3) Considere habilitar autenticação em dois fatores (2FA).';
     }
     
     achados.push({
@@ -149,20 +302,53 @@ export async function verificarVazamentosEmail(email: string, chaveApi: string):
       tipo: 'email_vazamento',
       tipoEntidade: TipoEntidade.EMAIL,
       entidade: email,
-      titulo: `E-mail corporativo aparece no vazamento "${breach.Title}"`,
+      titulo: `E-mail em vazamento: "${breach.Title}" (${breach.PwnCount.toLocaleString('pt-BR')} afetados)`,
       descricao,
       recomendacao,
       evidencia: {
         email,
+        
+        // Informações do breach
         nomeVazamento: breach.Name,
         tituloVazamento: breach.Title,
         dominioVazamento: breach.Domain,
+        logoVazamento: breach.LogoPath,
+        
+        // Datas
         dataVazamento: breach.BreachDate,
+        dataAdicionado: breach.AddedDate,
+        dataModificado: breach.ModifiedDate,
+        diasDesdeVazamento,
+        tempoDesdeVazamento,
+        
+        // Estatísticas
         quantidadeAfetados: breach.PwnCount,
+        quantidadeFormatada: breach.PwnCount > 1000000 ? 
+          `${(breach.PwnCount / 1000000).toFixed(1)}M` : 
+          `${(breach.PwnCount / 1000).toFixed(0)}K`,
+        
+        // Classificações
         verificado: breach.IsVerified,
+        fabricado: breach.IsFabricated,
         sensivel: breach.IsSensitive,
+        aposentado: breach.IsRetired,
+        listaSpam: breach.IsSpamList,
+        malware: breach.IsMalware,
+        
+        // Dados vazados
         classesDados,
-        descricaoOriginal: breach.Description?.slice(0, 500),
+        classesDadosTraduzidas: classesDados.map(traduzirClasseDados),
+        temSenhas,
+        temDadosCriticos,
+        dadosCriticosExpostos: classesDados.filter(d => DADOS_CRITICOS.includes(d)).map(traduzirClasseDados),
+        dadosSensiveisExpostos: classesDados.filter(d => DADOS_SENSIVEIS.includes(d)).map(traduzirClasseDados),
+        
+        // Score de risco
+        scoreRisco: score,
+        fatoresRisco: fatores,
+        
+        // Descrição original
+        descricaoOriginal: breach.Description?.replace(/<[^>]*>/g, '').slice(0, 1000),
       },
     });
   }
@@ -173,6 +359,9 @@ export async function verificarVazamentosEmail(email: string, chaveApi: string):
     metadados: {
       email,
       totalVazamentos: breaches.length,
+      vazamentoMaisRecente: breaches[0]?.BreachDate,
+      vazamentoMaisAntigo: breaches[breaches.length - 1]?.BreachDate,
+      totalRegistrosAfetados: breaches.reduce((sum, b) => sum + b.PwnCount, 0),
     },
   };
 }
@@ -205,6 +394,7 @@ export async function verificarVazamentosDominio(
   let totalVazamentos = 0;
   const emailsComVazamento: string[] = [];
   const erros: string[] = [];
+  const estatisticasBreaches: Record<string, { count: number; pwnCount: number }> = {};
   
   // Verificar cada e-mail (com rate limiting automático)
   for (const email of todosEmails.slice(0, 30)) { // Limitar a 30 para não demorar muito
@@ -215,6 +405,17 @@ export async function verificarVazamentosDominio(
         achados.push(...resultado.achados);
         emailsComVazamento.push(email);
         totalVazamentos += resultado.itensEncontrados;
+        
+        // Agregar estatísticas por breach
+        resultado.achados.forEach(achado => {
+          const nome = achado.evidencia?.nomeVazamento as string;
+          if (nome) {
+            if (!estatisticasBreaches[nome]) {
+              estatisticasBreaches[nome] = { count: 0, pwnCount: achado.evidencia?.quantidadeAfetados as number || 0 };
+            }
+            estatisticasBreaches[nome].count++;
+          }
+        });
       }
     } catch (erro: any) {
       // Se for rate limit, aguardar mais
@@ -227,20 +428,36 @@ export async function verificarVazamentosDominio(
   
   // Se encontrou vazamentos, adicionar resumo
   if (emailsComVazamento.length > 0 && achados.length > 1) {
+    // Ordenar breaches por quantidade de emails afetados
+    const breachesOrdenados = Object.entries(estatisticasBreaches)
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 10);
+    
     achados.unshift({
       fonte: FonteInformacao.HIBP,
       nivelRisco: NivelRisco.ALTO,
       tipo: 'resumo_vazamentos',
       tipoEntidade: TipoEntidade.DOMINIO,
       entidade: dominio,
-      titulo: `${emailsComVazamento.length} e-mail(s) do domínio encontrados em vazamentos`,
-      descricao: `A verificação automática identificou ${emailsComVazamento.length} endereço(s) de e-mail do domínio ${dominio} em vazamentos públicos de dados. Os e-mails afetados são: ${emailsComVazamento.join(', ')}. Cada e-mail foi detalhado individualmente nos achados abaixo.`,
-      recomendacao: 'Revise cada achado individual e tome as medidas recomendadas. Considere implementar uma política de rotação de senhas e habilitar autenticação em dois fatores para todos os usuários.',
+      titulo: `${emailsComVazamento.length} e-mail(s) do domínio em ${totalVazamentos} vazamento(s)`,
+      descricao: `A verificação automática identificou ${emailsComVazamento.length} endereço(s) de e-mail ` +
+        `do domínio ${dominio} em ${totalVazamentos} vazamentos públicos de dados. ` +
+        `Os e-mails afetados são: ${emailsComVazamento.join(', ')}. ` +
+        `Vazamentos mais frequentes: ${breachesOrdenados.map(([nome, stats]) => `${nome} (${stats.count} emails)`).join(', ')}.`,
+      recomendacao: 'Revise cada achado individual e tome as medidas recomendadas. ' +
+        'Considere implementar uma política de rotação de senhas e habilitar autenticação em dois fatores para todos os usuários. ' +
+        'Realize treinamento de conscientização sobre phishing.',
       evidencia: {
         dominio,
         totalEmailsVerificados: todosEmails.length,
         emailsComVazamento,
         totalVazamentosEncontrados: totalVazamentos,
+        breachesMaisFrequentes: breachesOrdenados.map(([nome, stats]) => ({
+          nome,
+          emailsAfetados: stats.count,
+          totalRegistros: stats.pwnCount
+        })),
+        estatisticasBreaches,
       },
     });
   }
@@ -252,6 +469,8 @@ export async function verificarVazamentosDominio(
       dominio,
       emailsVerificados: todosEmails.length,
       emailsComVazamento: emailsComVazamento.length,
+      totalVazamentos,
+      breachesUnicos: Object.keys(estatisticasBreaches).length,
       erros: erros.length > 0 ? erros.slice(0, 5) : undefined,
     },
   };
@@ -274,6 +493,38 @@ function traduzirClasseDados(classe: string): string {
     'Job titles': 'Cargos',
     'Employers': 'Empregadores',
     'Geographic locations': 'Localizações geográficas',
+    'Financial data': 'Dados financeiros',
+    'Private messages': 'Mensagens privadas',
+    'Health records': 'Registros de saúde',
+    'Government issued IDs': 'Documentos governamentais',
+    'Passport numbers': 'Números de passaporte',
+    'Tax IDs': 'CPF/CNPJ',
+    'Biometric data': 'Dados biométricos',
+    'Sexual preferences': 'Preferências sexuais',
+    'Political views': 'Opiniões políticas',
+    'Religious beliefs': 'Crenças religiosas',
+    'Ethnic origins': 'Origens étnicas',
+    'Purchase histories': 'Histórico de compras',
+    'Education levels': 'Níveis de educação',
+    'Family members names': 'Nomes de familiares',
+    'Income levels': 'Níveis de renda',
+    'Marital statuses': 'Estado civil',
+    'Nationalities': 'Nacionalidades',
+    'Occupations': 'Ocupações',
+    'Personal descriptions': 'Descrições pessoais',
+    'Personal interests': 'Interesses pessoais',
+    'Photos': 'Fotos',
+    'Profile photos': 'Fotos de perfil',
+    'Relationship statuses': 'Status de relacionamento',
+    'Security questions and answers': 'Perguntas e respostas de segurança',
+    'Social connections': 'Conexões sociais',
+    'Spoken languages': 'Idiomas falados',
+    'Time zones': 'Fusos horários',
+    'Travel habits': 'Hábitos de viagem',
+    'Vehicle details': 'Detalhes de veículos',
+    'Website activity': 'Atividade em websites',
+    'Work habits': 'Hábitos de trabalho',
+    'Years of professional experience': 'Anos de experiência profissional',
   };
   return traducoes[classe] || classe;
 }
