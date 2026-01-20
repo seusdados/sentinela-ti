@@ -10,6 +10,9 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { createClient } from '@supabase/supabase-js';
+import { calculateFinalScore, getRiskLevel, DEFAULT_WEIGHTS, type ScoringAxes, calculateAllAxes, scoreFinding } from './services/advancedScoringService';
+import { classifyFinding, getVulnClassDetails, type VulnClass } from './services/vulnClassService';
+import { getLGPDCrosswalk } from './services/lgpdCrosswalkService';
 
 // Configuração
 const PORT = process.env.PORT || 3001;
@@ -595,8 +598,282 @@ app.get('/api/usuarios/me', autenticar, async (req: Request, res: Response) => {
   }
 });
 
+// ============================================================================
+// ROTAS DE VARREDURA COM SCORING, VULNCLASS E LGPD CROSSWALK
+// ============================================================================
+
+
+
+// Listar varreduras
+app.get('/api/varreduras', autenticar, async (req: Request, res: Response) => {
+  try {
+    const orgId = req.usuario!.organizacaoId;
+    
+    const { data: varreduras, error } = await supabase
+      .from('varreduras')
+      .select('*, empresas(nome)')
+      .order('criado_em', { ascending: false })
+      .limit(50);
+    
+    if (error) throw error;
+    
+    res.json({
+      varreduras: (varreduras || []).map((v: any) => ({
+        id: v.id,
+        empresaId: v.empresa_id,
+        empresa: v.empresas?.nome || 'N/A',
+        status: v.status,
+        totalAchados: v.total_achados || 0,
+        achadosCriticos: v.achados_criticos || 0,
+        achadosAltos: v.achados_altos || 0,
+        criadoEm: v.criado_em,
+        finalizadoEm: v.finalizado_em,
+      })),
+      total: varreduras?.length || 0,
+    });
+  } catch (erro: any) {
+    console.error('Erro ao listar varreduras:', erro);
+    res.status(500).json({ erro: erro.message });
+  }
+});
+
+// Detalhes de uma varredura
+app.get('/api/varreduras/:id', autenticar, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    const { data: varredura, error } = await supabase
+      .from('varreduras')
+      .select('*, empresas(nome, dominios_empresa(dominio))')
+      .eq('id', id)
+      .single();
+    
+    if (error || !varredura) {
+      res.status(404).json({ erro: 'Varredura não encontrada' });
+      return;
+    }
+    
+    // Buscar achados da varredura
+    const { data: achados } = await supabase
+      .from('definicoes_achado')
+      .select('*')
+      .eq('varredura_id', id)
+      .order('nivel_risco', { ascending: false });
+    
+    res.json({
+      varredura: {
+        id: varredura.id,
+        empresaId: varredura.empresa_id,
+        empresa: varredura.empresas?.nome || 'N/A',
+        dominios: varredura.empresas?.dominios_empresa?.map((d: any) => d.dominio) || [],
+        status: varredura.status,
+        totalAchados: varredura.total_achados || 0,
+        achadosCriticos: varredura.achados_criticos || 0,
+        achadosAltos: varredura.achados_altos || 0,
+        criadoEm: varredura.criado_em,
+        finalizadoEm: varredura.finalizado_em,
+      },
+      achados: (achados || []).map((a: any) => ({
+        id: a.id,
+        titulo: a.titulo,
+        descricao: a.descricao,
+        fonte: a.fonte,
+        nivelRisco: a.nivel_risco,
+        status: a.status,
+        vulnClass: a.vuln_class,
+        scoreAxes: a.score_axes,
+        scoreFinal: a.score_final,
+        lgpdArticles: a.lgpd_articles,
+        anpdNotificationRequired: a.anpd_notification_required,
+        primeiraVezEm: a.primeira_vez_em,
+        ultimaVezEm: a.ultima_vez_em,
+      })),
+    });
+  } catch (erro: any) {
+    console.error('Erro ao buscar varredura:', erro);
+    res.status(500).json({ erro: erro.message });
+  }
+});
+
+// Criar nova varredura
+app.post('/api/varreduras', autenticar, async (req: Request, res: Response) => {
+  try {
+    const orgId = req.usuario!.organizacaoId;
+    const userId = req.usuario!.id;
+    const { empresaId, dominios } = req.body;
+    
+    if (!empresaId) {
+      res.status(400).json({ erro: 'empresaId é obrigatório' });
+      return;
+    }
+    
+    // Criar varredura
+    const { data: varredura, error } = await supabase
+      .from('varreduras')
+      .insert({
+        empresa_id: empresaId,
+        status: 'PENDENTE',
+        criado_por_id: userId,
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    
+    res.status(201).json({ varredura });
+  } catch (erro: any) {
+    console.error('Erro ao criar varredura:', erro);
+    res.status(500).json({ erro: erro.message });
+  }
+});
+
+// Endpoint para calcular score de um achado
+app.post('/api/scoring/calcular', autenticar, async (req: Request, res: Response) => {
+  try {
+    const { fonte, tipo, dados } = req.body;
+    
+    // Classificar o achado
+    const vulnClass = classifyFinding({
+      fonte: fonte || '',
+      titulo: dados.titulo || tipo || '',
+      descricao: dados.descricao || '',
+      nivelRisco: dados.nivelRisco || 'MEDIO',
+      tipo: tipo || '',
+    });
+    const vulnClassDetails = getVulnClassDetails(vulnClass);
+    
+    // Calcular eixos de scoring baseado nos dados
+    const axes: ScoringAxes = {
+      exposure: vulnClassDetails.defaultExposure,
+      exploitability: vulnClassDetails.defaultExploitability,
+      dataSensitivity: vulnClassDetails.defaultDataSensitivity,
+      scale: Math.min(1, (dados.count || 1) / 100), // Normalizar para 0-1
+      confidence: 0.85 // Confiança padrão
+    };
+    
+    // Calcular score final
+    const scoreFinalValue = calculateFinalScore(axes, DEFAULT_WEIGHTS);
+    const riskLevel = getRiskLevel(scoreFinalValue);
+    
+    // Obter mapeamento LGPD
+    const lgpdCrosswalk = getLGPDCrosswalk(vulnClass);
+    const anpdRequired = lgpdCrosswalk.requiresANPDNotification;
+    
+    res.json({
+      vulnClass,
+      vulnClassDetails,
+      scoreAxes: {
+        exposure: Math.round(axes.exposure * 100),
+        exploitability: Math.round(axes.exploitability * 100),
+        dataSensitivity: Math.round(axes.dataSensitivity * 100),
+        scale: Math.round(axes.scale * 100),
+        confidence: Math.round(axes.confidence * 100),
+      },
+      scoreFinal: Math.round(scoreFinalValue),
+      riskLevel,
+      lgpd: {
+        articles: lgpdCrosswalk.applicableArticles.map(a => a.number),
+        anpdCriteria: lgpdCrosswalk.anpdCriteria.map(c => c.name),
+        notificationRequired: anpdRequired,
+        deadlineDays: anpdRequired ? 3 : null,
+        recommendations: lgpdCrosswalk.recommendations,
+      },
+    });
+  } catch (erro: any) {
+    console.error('Erro ao calcular score:', erro);
+    res.status(500).json({ erro: erro.message });
+  }
+});
+
+// Endpoint para obter detalhes de VulnClass
+app.get('/api/vulnclass/:class', autenticar, async (req: Request, res: Response) => {
+  try {
+    const vulnClass = req.params.class as VulnClass;
+    const details = getVulnClassDetails(vulnClass);
+    const lgpdCrosswalk = getLGPDCrosswalk(vulnClass);
+    
+    res.json({
+      ...details,
+      lgpd: lgpdCrosswalk,
+    });
+  } catch (erro: any) {
+    console.error('Erro ao buscar VulnClass:', erro);
+    res.status(500).json({ erro: erro.message });
+  }
+});
+
+// Endpoint para listar todas as VulnClasses
+app.get('/api/vulnclasses', autenticar, async (req: Request, res: Response) => {
+  try {
+    const classes: VulnClass[] = [
+      'SECRETS_LEAK',
+      'DATA_EXPOSURE_PUBLIC',
+      'PHISHING_SOCIAL_ENG',
+      'RANSOMWARE_IMPACT',
+      'UNPATCHED_EXPLOITED',
+      'MALWARE_C2',
+      'ACCOUNT_TAKEOVER',
+      'THIRD_PARTY_RISK'
+    ];
+    
+    const result = classes.map(vc => {
+      const details = getVulnClassDetails(vc);
+      const lgpd = getLGPDCrosswalk(vc);
+      return {
+        ...details,
+        lgpd: {
+          articles: lgpd.applicableArticles.map(a => a.number),
+          notificationRequired: lgpd.requiresANPDNotification,
+        },
+      };
+    });
+    
+    res.json({ vulnClasses: result });
+  } catch (erro: any) {
+    console.error('Erro ao listar VulnClasses:', erro);
+    res.status(500).json({ erro: erro.message });
+  }
+});
+
+// Endpoint para obter mapeamento LGPD completo
+app.get('/api/lgpd/crosswalk/:vulnClass', autenticar, async (req: Request, res: Response) => {
+  try {
+    const vulnClass = req.params.vulnClass as VulnClass;
+    const crosswalk = getLGPDCrosswalk(vulnClass);
+    
+    res.json(crosswalk);
+  } catch (erro: any) {
+    console.error('Erro ao buscar crosswalk LGPD:', erro);
+    res.status(500).json({ erro: erro.message });
+  }
+});
+
+// Endpoint para verificar necessidade de notificação ANPD
+app.post('/api/lgpd/check-notification', autenticar, async (req: Request, res: Response) => {
+  try {
+    const { vulnClass, scoreFinal, recordCount } = req.body;
+    
+    const crosswalk = getLGPDCrosswalk(vulnClass as VulnClass);
+    const required = crosswalk.requiresANPDNotification;
+    
+    res.json({
+      notificationRequired: required,
+      deadlineDays: required ? 3 : null,
+      articles: crosswalk.applicableArticles.map(a => a.number),
+      anpdCriteria: crosswalk.anpdCriteria.filter(c => c.requiresNotification).map(c => c.name),
+      recommendations: crosswalk.recommendations,
+    });
+  } catch (erro: any) {
+    console.error('Erro ao verificar notificação ANPD:', erro);
+    res.status(500).json({ erro: erro.message });
+  }
+});
+
 // Iniciar servidor
 app.listen(PORT, () => {
   console.log(`Servidor Sentinela rodando na porta ${PORT}`);
   console.log(`Supabase URL: ${supabaseUrl}`);
+  console.log('Sistema de Scoring 5 Eixos: ATIVO');
+  console.log('Sistema de VulnClasses: ATIVO');
+  console.log('Sistema de LGPD Crosswalk: ATIVO');
 });
