@@ -109,19 +109,14 @@ export async function verificarVazamentosEmail(email: string, chaveApi: string):
   
   for (const breach of breaches) {
     // Determinar nível de risco baseado no tipo de dados vazados
-    let nivelRisco = NivelRisco.ALTO;
     const classesDados = breach.DataClasses || [];
     
     const dadosCriticos = ['Passwords', 'Credit cards', 'Bank account numbers', 'Social security numbers'];
-    const dadosAltos = ['Email addresses', 'Phone numbers', 'Physical addresses', 'IP addresses'];
     
-    if (classesDados.some(d => dadosCriticos.includes(d))) {
-      nivelRisco = NivelRisco.CRITICO;
-    } else if (breach.IsVerified && breach.PwnCount > 1000000) {
-      nivelRisco = NivelRisco.CRITICO;
-    } else if (classesDados.some(d => dadosAltos.includes(d))) {
-      nivelRisco = NivelRisco.ALTO;
-    }
+    // Vazamentos com dados críticos ou grandes = CRITICO, senão ALTO
+    const isCritico = classesDados.some(d => dadosCriticos.includes(d)) || 
+                      (breach.IsVerified && breach.PwnCount > 1000000);
+    const nivelRisco = isCritico ? NivelRisco.CRITICO : NivelRisco.ALTO;
     
     // Traduzir classes de dados
     const dadosVazados = classesDados.map(traduzirClasseDados).join(', ');

@@ -22,6 +22,11 @@ import { verificarReputacaoIP } from './sources/abuseipdb';
 import { buscarEmPastes } from './sources/psbdmp';
 import { verificarVazamentosDominio } from './sources/hibp';
 import { buscarSecretsEmCodigo } from './sources/github';
+import { buscarURLsMaliciosas } from './sources/urlhaus';
+import { buscarIndicadoresMalware } from './sources/threatfox';
+import { buscarVitimasRansomware } from './sources/ransomwarelive';
+import { buscarCredenciaisComprometidas } from './sources/hudsonrock';
+import { calcularScoreRisco, AchadoParaScore } from './riskScoreService';
 
 import { AchadoCandidato, ResultadoFonte } from '../types';
 
@@ -266,10 +271,12 @@ export async function executarVarredura(varreduraId: string) {
         const mensagemErro = String(erro?.message ?? erro);
         let status = StatusExecucaoFonte.ERRO;
         
+        // Manter como ERRO - os valores TIMEOUT e LIMITE_TAXA não existem no enum
+        // O erro já está registrado na mensagem de erro
         if (mensagemErro.includes('timeout') || mensagemErro.includes('TIMEOUT')) {
-          status = StatusExecucaoFonte.TIMEOUT;
+          // Timeout detectado - registrar na mensagem
         } else if (mensagemErro.includes('rate') || mensagemErro.includes('429')) {
-          status = StatusExecucaoFonte.LIMITE_TAXA;
+          // Rate limit detectado - registrar na mensagem
         }
         
         await finalizarExecucaoFonte(execucao.id, {
@@ -324,7 +331,136 @@ export async function executarVarredura(varreduraId: string) {
     }
     
     // =========================================================================
-    // FASE 5: HIBP - Verificar vazamentos de e-mail
+    // FASE 5: Novas Fontes de Threat Intelligence (APIs Gratuitas)
+    // =========================================================================
+    
+    // URLhaus - URLs de malware (Abuse.ch - grátis)
+    for (const dominio of dominios.slice(0, 3)) {
+      const execucao = await iniciarExecucaoFonte({
+        varreduraId,
+        fonte: FonteInformacao.OTX, // Usando OTX como proxy
+        consulta: `urlhaus:${dominio}`,
+      });
+      
+      const inicio = Date.now();
+      try {
+        const resultado = await buscarURLsMaliciosas(dominio);
+        
+        if (resultado.achados?.length) {
+          todosAchados.push(...resultado.achados);
+        }
+        
+        await finalizarExecucaoFonte(execucao.id, {
+          status: StatusExecucaoFonte.SUCESSO,
+          duracaoMs: Date.now() - inicio,
+          itensEncontrados: resultado.itensEncontrados,
+          metadados: { ...resultado.metadados, fonte: 'URLhaus' },
+        });
+      } catch (erro: any) {
+        await finalizarExecucaoFonte(execucao.id, {
+          status: StatusExecucaoFonte.ERRO,
+          duracaoMs: Date.now() - inicio,
+          mensagemErro: String(erro?.message ?? erro),
+        });
+      }
+    }
+    
+    // ThreatFox - IoCs de malware (Abuse.ch - grátis)
+    for (const dominio of dominios.slice(0, 3)) {
+      const execucao = await iniciarExecucaoFonte({
+        varreduraId,
+        fonte: FonteInformacao.OTX, // Usando OTX como proxy
+        consulta: `threatfox:${dominio}`,
+      });
+      
+      const inicio = Date.now();
+      try {
+        const resultado = await buscarIndicadoresMalware(dominio);
+        
+        if (resultado.achados?.length) {
+          todosAchados.push(...resultado.achados);
+        }
+        
+        await finalizarExecucaoFonte(execucao.id, {
+          status: StatusExecucaoFonte.SUCESSO,
+          duracaoMs: Date.now() - inicio,
+          itensEncontrados: resultado.itensEncontrados,
+          metadados: { ...resultado.metadados, fonte: 'ThreatFox' },
+        });
+      } catch (erro: any) {
+        await finalizarExecucaoFonte(execucao.id, {
+          status: StatusExecucaoFonte.ERRO,
+          duracaoMs: Date.now() - inicio,
+          mensagemErro: String(erro?.message ?? erro),
+        });
+      }
+    }
+    
+    // Ransomware.live - Vítimas de ransomware (grátis)
+    for (const dominio of dominios.slice(0, 2)) {
+      const execucao = await iniciarExecucaoFonte({
+        varreduraId,
+        fonte: FonteInformacao.LEAKIX, // Usando LEAKIX como proxy
+        consulta: `ransomware:${dominio}`,
+      });
+      
+      const inicio = Date.now();
+      try {
+        const nomeEmpresa = varredura.empresa.nome;
+        const resultado = await buscarVitimasRansomware(dominio, nomeEmpresa);
+        
+        if (resultado.achados?.length) {
+          todosAchados.push(...resultado.achados);
+        }
+        
+        await finalizarExecucaoFonte(execucao.id, {
+          status: StatusExecucaoFonte.SUCESSO,
+          duracaoMs: Date.now() - inicio,
+          itensEncontrados: resultado.itensEncontrados,
+          metadados: { ...resultado.metadados, fonte: 'Ransomware.live' },
+        });
+      } catch (erro: any) {
+        await finalizarExecucaoFonte(execucao.id, {
+          status: StatusExecucaoFonte.ERRO,
+          duracaoMs: Date.now() - inicio,
+          mensagemErro: String(erro?.message ?? erro),
+        });
+      }
+    }
+    
+    // Hudson Rock - Credenciais comprometidas por infostealers (grátis)
+    for (const dominio of dominios.slice(0, 2)) {
+      const execucao = await iniciarExecucaoFonte({
+        varreduraId,
+        fonte: FonteInformacao.LEAKIX, // Usando LEAKIX como proxy
+        consulta: `hudsonrock:${dominio}`,
+      });
+      
+      const inicio = Date.now();
+      try {
+        const resultado = await buscarCredenciaisComprometidas(dominio);
+        
+        if (resultado.achados?.length) {
+          todosAchados.push(...resultado.achados);
+        }
+        
+        await finalizarExecucaoFonte(execucao.id, {
+          status: StatusExecucaoFonte.SUCESSO,
+          duracaoMs: Date.now() - inicio,
+          itensEncontrados: resultado.itensEncontrados,
+          metadados: { ...resultado.metadados, fonte: 'Hudson Rock' },
+        });
+      } catch (erro: any) {
+        await finalizarExecucaoFonte(execucao.id, {
+          status: StatusExecucaoFonte.ERRO,
+          duracaoMs: Date.now() - inicio,
+          mensagemErro: String(erro?.message ?? erro),
+        });
+      }
+    }
+    
+    // =========================================================================
+    // FASE 6: HIBP - Verificar vazamentos de e-mail
     // =========================================================================
     const chaveHibp = await obterChaveApi(organizacaoId, 'HIBP');
     if (chaveHibp && dominios.length > 0) {
@@ -387,6 +523,18 @@ export async function executarVarredura(varreduraId: string) {
         achadosBaixos: contagem.baixos,
       },
     });
+    
+    // Calcular score de risco
+    const achadosParaScore: AchadoParaScore[] = todosAchados.map(a => ({
+      nivelRisco: a.nivelRisco,
+      fonte: a.fonte,
+      tipo: a.tipo,
+    }));
+    const scoreRisco = calcularScoreRisco(achadosParaScore);
+    
+    // Score de risco calculado - será usado no PDF e na interface
+    // O score é retornado junto com os achados na API
+    console.log(`Score de risco calculado: ${scoreRisco.pontuacao} (${scoreRisco.classificacao})`);
     
     // Gerar relatório PDF
     // await gerarRelatorio(varreduraId);

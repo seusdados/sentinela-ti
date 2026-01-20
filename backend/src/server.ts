@@ -16,6 +16,7 @@ import { hashSenha, verificarSenha } from './utils/password';
 import { sha256Hex } from './utils/crypto';
 import { salvarChaveApi, listarChavesApi, removerChaveApi, PROVEDORES_INFO } from './services/chaveApiService';
 import { obterResumoExecucoes } from './services/execucaoFonteService';
+import { gerarRelatorioPDF, calcularScoreRisco } from './services/pdfService';
 import { StatusVarredura, NivelRisco, ProvedorApi, PerfilUsuario } from '@prisma/client';
 
 const app = express();
@@ -501,6 +502,39 @@ app.get('/api/varreduras/:id', autenticar, async (req: Request, res: Response) =
       })),
     });
   } catch (erro: any) {
+    res.status(500).json({ erro: erro.message });
+  }
+});
+
+
+// ---------- Relatório PDF ----------
+
+app.get('/api/varreduras/:id/relatorio-pdf', autenticar, async (req: Request, res: Response) => {
+  try {
+    const orgId = req.usuario!.organizacaoId;
+    const varreduraId = req.params.id;
+    
+    const varredura = await prisma.varredura.findFirst({
+      where: { id: varreduraId, empresa: { organizacaoId: orgId } },
+      include: { empresa: { select: { nome: true } } },
+    });
+    
+    if (!varredura) {
+      res.status(404).json({ erro: 'Varredura não encontrada' });
+      return;
+    }
+    
+    const pdfBuffer = await gerarRelatorioPDF(varreduraId);
+    
+    const nomeArquivo = 'relatorio-' + varredura.empresa.nome.replace(/[^a-zA-Z0-9]/g, '_') + '-' + new Date().toISOString().split('T')[0] + '.pdf';
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="' + nomeArquivo + '"');
+    res.setHeader('Content-Length', pdfBuffer.length);
+    
+    res.send(pdfBuffer);
+  } catch (erro: any) {
+    console.error('Erro ao gerar PDF:', erro);
     res.status(500).json({ erro: erro.message });
   }
 });

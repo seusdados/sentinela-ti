@@ -89,7 +89,8 @@ export async function buscarVazamentos(dominio: string, chaveApi: string): Promi
     const entidade = host || ip;
     
     // Determinar nível de risco baseado na severidade e tipo de vazamento
-    let nivelRisco = NivelRisco.ALTO;
+    // Inicializar com ALTO como padrão
+    let nivelRisco: typeof NivelRisco.CRITICO | typeof NivelRisco.ALTO = NivelRisco.ALTO;
     let tipo = 'servico_exposto';
     let titulo = '';
     let descricao = '';
@@ -117,7 +118,7 @@ export async function buscarVazamentos(dominio: string, chaveApi: string): Promi
     }
     // Banco de dados exposto
     else if (tags.some(t => ['mongodb', 'elasticsearch', 'redis', 'mysql', 'postgresql'].includes(t.toLowerCase()))) {
-      nivelRisco = NivelRisco.CRITICO;
+      nivelRisco = NivelRisco.CRITICO as typeof NivelRisco.CRITICO;
       tipo = 'banco_dados_exposto';
       titulo = `CRÍTICO: Banco de dados exposto em ${entidade}`;
       descricao = `Um banco de dados (${resumo || 'tipo não identificado'}) foi encontrado exposto em ${entidade}${porta ? `:${porta}` : ''}. Bancos de dados expostos são uma das principais causas de vazamentos massivos de dados.`;

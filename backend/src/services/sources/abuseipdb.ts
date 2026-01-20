@@ -100,19 +100,12 @@ export async function verificarReputacaoIP(ip: string, chaveApi: string): Promis
   
   if (pontuacaoConfianca > 0 || totalReportes > 0) {
     // Determinar nível de risco baseado na pontuação
-    let nivelRisco = NivelRisco.BAIXO;
-    let tipo = 'ip_reportado';
-    
-    if (pontuacaoConfianca >= 80) {
-      nivelRisco = NivelRisco.CRITICO;
-      tipo = 'ip_altamente_abusivo';
-    } else if (pontuacaoConfianca >= 50) {
-      nivelRisco = NivelRisco.ALTO;
-      tipo = 'ip_abusivo';
-    } else if (pontuacaoConfianca >= 25) {
-      nivelRisco = NivelRisco.MEDIO;
-      tipo = 'ip_suspeito';
-    }
+    // Usando apenas CRITICO ou ALTO para IPs abusivos
+    const nivelRisco = pontuacaoConfianca >= 80 ? NivelRisco.CRITICO : NivelRisco.ALTO;
+    const tipo = pontuacaoConfianca >= 80 ? 'ip_altamente_abusivo' : 
+                 pontuacaoConfianca >= 50 ? 'ip_abusivo' : 'ip_suspeito';
+    const isCritico = pontuacaoConfianca >= 80;
+    const isAlto = pontuacaoConfianca >= 50;
     
     // Coletar categorias de abuso reportadas
     const categoriasReportadas = new Set<string>();
@@ -146,14 +139,12 @@ export async function verificarReputacaoIP(ip: string, chaveApi: string): Promis
     
     // Construir recomendação
     let recomendacao = '';
-    if (nivelRisco === NivelRisco.CRITICO) {
+    if (isCritico) {
       recomendacao = 'URGENTE: Este IP possui reputação extremamente negativa. Se pertence à sua organização, investigue imediatamente possível comprometimento. Se é um IP externo acessando seus sistemas, bloqueie-o no firewall.';
-    } else if (nivelRisco === NivelRisco.ALTO) {
+    } else if (isAlto) {
       recomendacao = 'Este IP tem histórico significativo de atividades abusivas. Verifique os logs de acesso para identificar atividades suspeitas e considere implementar bloqueios ou monitoramento adicional.';
-    } else if (nivelRisco === NivelRisco.MEDIO) {
-      recomendacao = 'Monitore o tráfego relacionado a este IP. Os reportes podem indicar comportamento legítimo mal interpretado ou uma ameaça real.';
     } else {
-      recomendacao = 'IP com poucos reportes. Monitore normalmente e verifique se há padrões suspeitos nos logs de acesso.';
+      recomendacao = 'Monitore o tráfego relacionado a este IP. Os reportes podem indicar comportamento legítimo mal interpretado ou uma ameaça real.';
     }
     
     achados.push({

@@ -83,20 +83,13 @@ export async function buscarIndicadoresAmeaca(dominio: string, chaveApi?: string
     }
     
     // Determinar nível de risco baseado nos tags e quantidade de pulses
-    let nivelRisco = NivelRisco.MEDIO;
-    let tipo = 'indicador_ameaca';
-    
     const tagsAltoRisco = ['apt', 'ransomware', 'c2', 'c&c', 'botnet', 'trojan', 'malware'];
     const temTagAltoRisco = tagsAltoRisco.some(t => tags.has(t));
     
-    if (adversarios.size > 0 || temTagAltoRisco) {
-      nivelRisco = NivelRisco.ALTO;
-      tipo = 'associacao_ameaca_conhecida';
-    }
-    
-    if (totalPulses > 10) {
-      nivelRisco = NivelRisco.CRITICO;
-    }
+    // Determinar nível de risco: muitos pulses = CRITICO, senão ALTO
+    const isCritico = totalPulses > 10;
+    const nivelRisco = isCritico ? NivelRisco.CRITICO : NivelRisco.ALTO;
+    const tipo = (adversarios.size > 0 || temTagAltoRisco) ? 'associacao_ameaca_conhecida' : 'indicador_ameaca';
     
     // Construir descrição detalhada
     let descricao = `O domínio ${dominio} aparece em ${totalPulses} pulse(s) de inteligência de ameaças no AlienVault OTX. `;
@@ -113,12 +106,10 @@ export async function buscarIndicadoresAmeaca(dominio: string, chaveApi?: string
     descricao += `Pulses são relatórios de ameaças criados por pesquisadores de segurança indicando que este domínio foi observado em atividades maliciosas ou é considerado um indicador de comprometimento.`;
     
     let recomendacao = '';
-    if (nivelRisco === NivelRisco.CRITICO) {
+    if (isCritico) {
       recomendacao = 'URGENTE: O alto número de associações com ameaças indica que este domínio pode estar seriamente comprometido ou sendo usado ativamente em campanhas maliciosas. Realize uma investigação forense completa, verifique todos os sistemas conectados e considere a possibilidade de incidente de segurança.';
-    } else if (nivelRisco === NivelRisco.ALTO) {
-      recomendacao = 'Investigue as associações reportadas. Verifique os logs do servidor para atividades suspeitas, analise o tráfego de rede e confirme se o domínio não está sendo usado para fins maliciosos.';
     } else {
-      recomendacao = 'Monitore o domínio e revise periodicamente os pulses associados. Pode ser um falso positivo ou uma associação histórica já resolvida.';
+      recomendacao = 'Investigue as associações reportadas. Verifique os logs do servidor para atividades suspeitas, analise o tráfego de rede e confirme se o domínio não está sendo usado para fins maliciosos.';
     }
     
     achados.push({

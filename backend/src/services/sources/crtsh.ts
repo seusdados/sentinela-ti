@@ -28,6 +28,16 @@ interface RegistroCertificado {
   serial_number: string;
 }
 
+interface CertificadoProcessado {
+  subdominio: string;
+  emissor: string;
+  dataEmissao: string;
+  dataExpiracao: string;
+  serialNumber: string;
+  expirado: boolean;
+  diasParaExpirar: number;
+}
+
 export async function descobrirSubdominios(dominio: string): Promise<ResultadoFonte> {
   // Busca certificados emitidos para o domínio e todos os subdomínios
   const url = `https://crt.sh/?q=%25.${encodeURIComponent(dominio)}&output=json`;
@@ -42,8 +52,9 @@ export async function descobrirSubdominios(dominio: string): Promise<ResultadoFo
     };
   }
   
-  // Extrair subdomínios únicos
-  const subdominios = new Set<string>();
+  // Processar certificados
+  const certificadosPorSubdominio: Record<string, CertificadoProcessado[]> = {};
+  const agora = new Date();
   
   for (const registro of resposta.dados) {
     const valor = registro.name_value;
@@ -58,30 +69,100 @@ export async function descobrirSubdominios(dominio: string): Promise<ResultadoFo
       
       // Verificar se é um subdomínio válido do domínio alvo
       if (nome === dominio || nome.endsWith(`.${dominio}`)) {
-        subdominios.add(nome);
+        const dataExpiracao = new Date(registro.not_after);
+        const diasParaExpirar = Math.floor((dataExpiracao.getTime() - agora.getTime()) / (1000 * 60 * 60 * 24));
+        
+        const certProcessado: CertificadoProcessado = {
+          subdominio: nome,
+          emissor: extrairEmissor(registro.issuer_name),
+          dataEmissao: registro.not_before,
+          dataExpiracao: registro.not_after,
+          serialNumber: registro.serial_number,
+          expirado: diasParaExpirar < 0,
+          diasParaExpirar,
+        };
+        
+        if (!certificadosPorSubdominio[nome]) {
+          certificadosPorSubdominio[nome] = [];
+        }
+        certificadosPorSubdominio[nome].push(certProcessado);
       }
     }
   }
   
-  const listaSubdominios = Array.from(subdominios).sort();
+  const listaSubdominios = Object.keys(certificadosPorSubdominio).sort();
   
   // Identificar subdomínios potencialmente sensíveis
   const achados: AchadoCandidato[] = [];
   
   const padroesSensiveis = [
-    { padrao: /^(dev|development|staging|stage|test|testing|uat|qa)\./i, tipo: 'ambiente_desenvolvimento', risco: NivelRisco.MEDIO },
-    { padrao: /^(admin|administrator|cms|backend|backoffice|dashboard)\./i, tipo: 'painel_administrativo', risco: NivelRisco.ALTO },
-    { padrao: /^(vpn|remote|rdp|ssh|bastion)\./i, tipo: 'acesso_remoto', risco: NivelRisco.ALTO },
-    { padrao: /^(api|rest|graphql|ws|websocket)\./i, tipo: 'endpoint_api', risco: NivelRisco.MEDIO },
-    { padrao: /^(db|database|mysql|postgres|mongo|redis|elastic)\./i, tipo: 'banco_dados', risco: NivelRisco.CRITICO },
-    { padrao: /^(mail|smtp|imap|pop|webmail|exchange)\./i, tipo: 'servidor_email', risco: NivelRisco.MEDIO },
-    { padrao: /^(ftp|sftp|upload|files|storage|cdn|assets)\./i, tipo: 'armazenamento', risco: NivelRisco.MEDIO },
-    { padrao: /^(jenkins|gitlab|github|bitbucket|ci|cd|build)\./i, tipo: 'integracao_continua', risco: NivelRisco.ALTO },
-    { padrao: /^(jira|confluence|wiki|docs|internal)\./i, tipo: 'ferramenta_interna', risco: NivelRisco.MEDIO },
-    { padrao: /^(old|legacy|deprecated|backup|bkp)\./i, tipo: 'sistema_legado', risco: NivelRisco.ALTO },
+    { padrao: /^(dev|development|staging|stage|test|testing|uat|qa|sandbox|demo)\./i, tipo: 'ambiente_desenvolvimento', risco: NivelRisco.MEDIO },
+    { padrao: /^(admin|administrator|cms|backend|backoffice|dashboard|panel|control|manage)\./i, tipo: 'painel_administrativo', risco: NivelRisco.ALTO },
+    { padrao: /^(vpn|remote|rdp|ssh|bastion|jump|gateway)\./i, tipo: 'acesso_remoto', risco: NivelRisco.ALTO },
+    { padrao: /^(api|rest|graphql|ws|websocket|v1|v2|v3)\./i, tipo: 'endpoint_api', risco: NivelRisco.MEDIO },
+    { padrao: /^(db|database|mysql|postgres|mongo|redis|elastic|sql|data)\./i, tipo: 'banco_dados', risco: NivelRisco.CRITICO },
+    { padrao: /^(mail|smtp|imap|pop|webmail|exchange|mx|email)\./i, tipo: 'servidor_email', risco: NivelRisco.MEDIO },
+    { padrao: /^(ftp|sftp|upload|files|storage|cdn|assets|media|static)\./i, tipo: 'armazenamento', risco: NivelRisco.MEDIO },
+    { padrao: /^(jenkins|gitlab|github|bitbucket|ci|cd|build|deploy|docker|k8s|kubernetes)\./i, tipo: 'integracao_continua', risco: NivelRisco.ALTO },
+    { padrao: /^(jira|confluence|wiki|docs|internal|intranet|corp|corporate)\./i, tipo: 'ferramenta_interna', risco: NivelRisco.MEDIO },
+    { padrao: /^(old|legacy|deprecated|backup|bkp|archive|temp|tmp)\./i, tipo: 'sistema_legado', risco: NivelRisco.ALTO },
+    { padrao: /^(payment|pay|checkout|billing|invoice|finance)\./i, tipo: 'sistema_pagamento', risco: NivelRisco.CRITICO },
+    { padrao: /^(auth|login|sso|oauth|identity|iam)\./i, tipo: 'autenticacao', risco: NivelRisco.ALTO },
+    { padrao: /^(monitor|grafana|prometheus|kibana|logs|metrics|status)\./i, tipo: 'monitoramento', risco: NivelRisco.MEDIO },
   ];
   
   for (const subdominio of listaSubdominios) {
+    const certs = certificadosPorSubdominio[subdominio];
+    const certMaisRecente = certs.reduce((a, b) => 
+      new Date(a.dataEmissao) > new Date(b.dataEmissao) ? a : b
+    );
+    
+    // Verificar certificados expirados
+    const certsExpirados = certs.filter(c => c.expirado);
+    const certsProximosExpirar = certs.filter(c => !c.expirado && c.diasParaExpirar <= 30);
+    
+    if (certsExpirados.length > 0 && certsExpirados.length === certs.length) {
+      achados.push({
+        fonte: FonteInformacao.CRTSH,
+        nivelRisco: NivelRisco.MEDIO,
+        tipo: 'certificado_expirado',
+        tipoEntidade: TipoEntidade.SUBDOMINIO,
+        entidade: subdominio,
+        titulo: `Certificado SSL Expirado: ${subdominio}`,
+        descricao: `O subdomínio "${subdominio}" possui apenas certificados expirados. ` +
+          `Último certificado expirou em ${certMaisRecente.dataExpiracao}. ` +
+          `Emissor: ${certMaisRecente.emissor}.`,
+        recomendacao: 'Renove o certificado SSL ou desative o subdomínio se não estiver mais em uso.',
+        evidencia: {
+          subdominio,
+          emissor: certMaisRecente.emissor,
+          dataExpiracao: certMaisRecente.dataExpiracao,
+          diasExpirado: Math.abs(certMaisRecente.diasParaExpirar),
+          totalCertificados: certs.length,
+        },
+      });
+    } else if (certsProximosExpirar.length > 0) {
+      const certProximo = certsProximosExpirar[0];
+      achados.push({
+        fonte: FonteInformacao.CRTSH,
+        nivelRisco: NivelRisco.BAIXO,
+        tipo: 'certificado_expirando',
+        tipoEntidade: TipoEntidade.SUBDOMINIO,
+        entidade: subdominio,
+        titulo: `Certificado SSL Expirando em Breve: ${subdominio}`,
+        descricao: `O certificado do subdomínio "${subdominio}" expira em ${certProximo.diasParaExpirar} dias ` +
+          `(${certProximo.dataExpiracao}). Emissor: ${certProximo.emissor}.`,
+        recomendacao: 'Renove o certificado SSL antes da data de expiração para evitar interrupções.',
+        evidencia: {
+          subdominio,
+          emissor: certProximo.emissor,
+          dataExpiracao: certProximo.dataExpiracao,
+          diasParaExpirar: certProximo.diasParaExpirar,
+        },
+      });
+    }
+    
+    // Verificar padrões sensíveis
     for (const { padrao, tipo, risco } of padroesSensiveis) {
       if (padrao.test(subdominio)) {
         achados.push({
@@ -90,12 +171,17 @@ export async function descobrirSubdominios(dominio: string): Promise<ResultadoFo
           tipo,
           tipoEntidade: TipoEntidade.SUBDOMINIO,
           entidade: subdominio,
-          titulo: `Subdomínio potencialmente sensível descoberto: ${subdominio}`,
+          titulo: `Subdomínio Potencialmente Sensível: ${subdominio}`,
           descricao: gerarDescricao(tipo, subdominio),
           recomendacao: gerarRecomendacao(tipo),
           evidencia: {
             subdominio,
             tipoDetectado: tipo,
+            emissor: certMaisRecente.emissor,
+            dataEmissao: certMaisRecente.dataEmissao,
+            dataExpiracao: certMaisRecente.dataExpiracao,
+            algoritmo: extrairAlgoritmo(certMaisRecente.emissor),
+            totalCertificados: certs.length,
             totalSubdominiosEncontrados: listaSubdominios.length,
           },
         });
@@ -104,14 +190,56 @@ export async function descobrirSubdominios(dominio: string): Promise<ResultadoFo
     }
   }
   
+  // Estatísticas de emissores
+  const emissoresCont: Record<string, number> = {};
+  Object.values(certificadosPorSubdominio).flat().forEach(cert => {
+    emissoresCont[cert.emissor] = (emissoresCont[cert.emissor] || 0) + 1;
+  });
+  
+  const topEmissores = Object.entries(emissoresCont)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([emissor, count]) => ({ emissor, count }));
+  
   return {
     achados,
     itensEncontrados: listaSubdominios.length,
     metadados: {
       subdominios: listaSubdominios,
       totalCertificados: resposta.dados.length,
+      totalSubdominios: listaSubdominios.length,
+      certificadosExpirados: Object.values(certificadosPorSubdominio)
+        .flat()
+        .filter(c => c.expirado).length,
+      certificadosProximosExpirar: Object.values(certificadosPorSubdominio)
+        .flat()
+        .filter(c => !c.expirado && c.diasParaExpirar <= 30).length,
+      topEmissores,
+      subdominiosPorTipo: {
+        desenvolvimento: listaSubdominios.filter(s => /^(dev|staging|test|qa)/i.test(s)).length,
+        administrativo: listaSubdominios.filter(s => /^(admin|backend|dashboard)/i.test(s)).length,
+        api: listaSubdominios.filter(s => /^(api|rest|graphql)/i.test(s)).length,
+        outros: listaSubdominios.length,
+      },
     },
   };
+}
+
+function extrairEmissor(issuerName: string): string {
+  // Extrair o nome legível do emissor
+  const match = issuerName.match(/O=([^,]+)/);
+  if (match) return match[1].trim();
+  
+  const cnMatch = issuerName.match(/CN=([^,]+)/);
+  if (cnMatch) return cnMatch[1].trim();
+  
+  return issuerName.substring(0, 50);
+}
+
+function extrairAlgoritmo(issuerName: string): string {
+  if (issuerName.toLowerCase().includes('ecdsa')) return 'ECDSA';
+  if (issuerName.toLowerCase().includes('rsa')) return 'RSA';
+  return 'Desconhecido';
 }
 
 function gerarDescricao(tipo: string, subdominio: string): string {
@@ -126,6 +254,9 @@ function gerarDescricao(tipo: string, subdominio: string): string {
     integracao_continua: `O subdomínio "${subdominio}" indica uma ferramenta de integração contínua. Estas ferramentas frequentemente contêm credenciais e acesso ao código-fonte.`,
     ferramenta_interna: `O subdomínio "${subdominio}" sugere uma ferramenta interna da empresa. Ferramentas internas podem conter informações confidenciais sobre projetos e operações.`,
     sistema_legado: `O subdomínio "${subdominio}" indica um sistema legado ou backup. Sistemas antigos frequentemente não recebem atualizações de segurança e podem conter vulnerabilidades conhecidas.`,
+    sistema_pagamento: `O subdomínio "${subdominio}" indica um sistema de pagamentos. Sistemas financeiros são alvos de alto valor e requerem proteção máxima.`,
+    autenticacao: `O subdomínio "${subdominio}" indica um sistema de autenticação. Comprometimento deste sistema pode dar acesso a todos os outros sistemas.`,
+    monitoramento: `O subdomínio "${subdominio}" indica ferramentas de monitoramento. Estas podem revelar informações sobre a infraestrutura interna.`,
   };
   
   return descricoes[tipo] || `O subdomínio "${subdominio}" foi identificado como potencialmente sensível.`;
@@ -143,6 +274,9 @@ function gerarRecomendacao(tipo: string): string {
     integracao_continua: 'Restrinja o acesso por IP/VPN, revise as credenciais armazenadas e implemente autenticação forte.',
     ferramenta_interna: 'Verifique se o acesso está restrito a funcionários autorizados e se a ferramenta não expõe informações sensíveis.',
     sistema_legado: 'Avalie a necessidade de manter este sistema. Se necessário, aplique atualizações de segurança ou isole-o da rede pública.',
+    sistema_pagamento: 'CRÍTICO: Garanta conformidade com PCI-DSS. Implemente WAF, monitoramento contínuo e testes de penetração regulares.',
+    autenticacao: 'Implemente MFA obrigatório, monitore tentativas de login e considere soluções de detecção de fraude.',
+    monitoramento: 'Restrinja acesso às ferramentas de monitoramento por VPN. Não exponha métricas sensíveis publicamente.',
   };
   
   return recomendacoes[tipo] || 'Avalie a necessidade de exposição deste subdomínio e implemente controles de acesso adequados.';

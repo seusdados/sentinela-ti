@@ -59,8 +59,8 @@ export async function buscarEmPastes(termo: string): Promise<ResultadoFonte> {
       p.text?.toLowerCase().includes('secret')
     );
     
-    // Determinar nível de risco
-    let nivelRisco = NivelRisco.MEDIO;
+    // Determinar nível de risco - usar apenas CRITICO ou ALTO
+    let nivelRisco: typeof NivelRisco.CRITICO | typeof NivelRisco.ALTO = NivelRisco.ALTO;
     let tipo = 'mencao_paste';
     let titulo = '';
     let descricao = '';
@@ -75,14 +75,14 @@ export async function buscarEmPastes(termo: string): Promise<ResultadoFonte> {
       descricao += `Pastes com credenciais expostas são frequentemente resultado de vazamentos de dados ou phishing bem-sucedido.`;
       recomendacao = 'URGENTE: Analise os pastes identificados para determinar quais credenciais foram expostas. Force a troca de senha de todas as contas potencialmente comprometidas. Verifique logs de acesso para identificar uso não autorizado.';
     } else if (pastesComConfigs.length > 0) {
-      nivelRisco = NivelRisco.ALTO;
+      nivelRisco = NivelRisco.ALTO as typeof NivelRisco.ALTO;
       tipo = 'configuracao_exposta';
       titulo = `Possíveis configurações ou chaves de API expostas em pastes`;
       descricao = `Foram encontradas ${pastesComConfigs.length} publicações que podem conter configurações, chaves de API ou outros dados sensíveis relacionados a "${termo}". `;
       descricao += `Chaves de API expostas podem permitir acesso não autorizado a serviços e recursos da empresa.`;
       recomendacao = 'Verifique os pastes identificados e revogue imediatamente quaisquer chaves de API ou credenciais expostas. Gere novas chaves e atualize os sistemas que as utilizam.';
     } else if (pastesComEmails.length > 0) {
-      nivelRisco = NivelRisco.MEDIO;
+      nivelRisco = NivelRisco.ALTO; // Usando ALTO para emails expostos
       tipo = 'emails_expostos';
       titulo = `Menções em pastes podem conter listas de e-mails`;
       descricao = `Foram encontradas ${pastesComEmails.length} publicações que podem conter endereços de e-mail relacionados a "${termo}". `;

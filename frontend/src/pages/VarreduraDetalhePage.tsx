@@ -24,7 +24,9 @@ import {
   Mail,
   Code,
   Database,
+  Loader2,
 } from 'lucide-react';
+import RiskScoreGauge, { RiskScoreBar } from '../components/RiskScoreGauge';
 import { api } from '../services/api';
 
 const NOMES_RISCO = {
@@ -71,6 +73,36 @@ export default function VarreduraDetalhePage() {
   const [abaAtiva, setAbaAtiva] = useState<'achados' | 'fontes'>('achados');
   const [filtroRisco, setFiltroRisco] = useState<string>('');
   const [achadoExpandido, setAchadoExpandido] = useState<string | null>(null);
+  const [gerandoPdf, setGerandoPdf] = useState(false);
+  
+  const baixarRelatorioPdf = async () => {
+    setGerandoPdf(true);
+    try {
+      const response = await fetch(`/api/varreduras/${id}/relatorio-pdf`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Erro ao gerar relatório');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `relatorio-varredura-${id?.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (erro) {
+      console.error('Erro ao baixar relatório:', erro);
+      alert('Erro ao gerar relatório PDF. Tente novamente.');
+    } finally {
+      setGerandoPdf(false);
+    }
+  };
   
   useEffect(() => {
     carregarDados();
@@ -176,18 +208,53 @@ export default function VarreduraDetalhePage() {
             </div>
           </div>
           
-          {varredura.relatorio && (
-            <a
-              href={`/api/varreduras/${varredura.id}/relatorio`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-secondary"
+          {varredura.status === 'CONCLUIDA' && (
+            <button
+              onClick={baixarRelatorioPdf}
+              disabled={gerandoPdf}
+              className="btn btn-primary"
             >
-              <Download className="w-4 h-4" />
-              Baixar Relatório PDF
-            </a>
+              {gerandoPdf ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Gerando PDF...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Baixar Relatório PDF
+                </>
+              )}
+            </button>
           )}
         </div>
+        
+        {/* Score de Risco */}
+        {varredura.metadados?.scoreRisco !== undefined && (
+          <div className="mt-6 pt-6 border-t border-gray-100">
+            <div className="flex flex-col lg:flex-row lg:items-center gap-6">
+              <div className="flex-shrink-0">
+                <RiskScoreGauge 
+                  score={varredura.metadados.scoreRisco} 
+                  classificacao={varredura.metadados.classificacaoRisco}
+                  tamanho="md"
+                  mostrarDetalhes={true}
+                />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Análise de Risco</h3>
+                <p className="text-gray-600 mb-3">{varredura.metadados.descricaoRisco}</p>
+                {varredura.metadados.recomendacaoPrincipal && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      <strong>Recomendação:</strong> {varredura.metadados.recomendacaoPrincipal}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Métricas */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-gray-100">
