@@ -1,0 +1,25 @@
+{
+  "name": "sentinela-ti",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seusdados/sentinela-ti.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/seusdados/sentinela-ti/issues"
+  },
+  "homepage": "https://github.com/seusdados/sentinela-ti#readme",
+  "description": "",
+  "dependencies": {
+    "express": "^5.2.1",
+    "http-proxy-middleware": "^3.0.5"
+  }
+}

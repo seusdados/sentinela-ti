@@ -235,7 +235,7 @@ export async function verificarVazamentosEmail(email: string, chaveApi: string):
     const temSenhas = classesDados.includes('Passwords');
     const temDadosCriticos = classesDados.some(d => DADOS_CRITICOS.includes(d));
     
-    let nivelRisco = NivelRisco.ALTO;
+    let nivelRisco: typeof NivelRisco[keyof typeof NivelRisco] = NivelRisco.ALTO;
     if (score >= 70 || temDadosCriticos || (temSenhas && breach.IsVerified)) {
       nivelRisco = NivelRisco.CRITICO;
     }

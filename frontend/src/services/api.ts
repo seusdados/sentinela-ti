@@ -131,18 +131,18 @@ class ApiService {
 
   // Configurações
   getChavesApi() {
-    return this.request<any>('/configuracoes/chaves-api');
+    return this.request<any>('/chaves-api');
   }
 
   salvarChaveApi(provedor: string, chave: string) {
-    return this.request<any>('/configuracoes/chaves-api', {
+    return this.request<any>(`/chaves-api/${provedor}`, {
       method: 'POST',
-      body: { provedor, chave },
+      body: { chave },
     });
   }
 
   removerChaveApi(provedor: string) {
-    return this.request<any>(`/configuracoes/chaves-api/${provedor}`, {
+    return this.request<any>(`/chaves-api/${provedor}`, {
       method: 'DELETE',
     });
   }

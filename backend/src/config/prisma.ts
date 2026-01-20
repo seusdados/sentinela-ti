@@ -1,16 +1,9 @@
-import { PrismaClient } from '@prisma/client';
-import { env } from './env';
+// ============================================================================
+// Configuração do cliente de banco de dados
+// Usa Supabase REST API quando conexão direta não está disponível
+// ============================================================================
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
+import { supabaseAdapter } from './supabaseAdapter';
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-  });
-
-if (env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
-}
+// Exportar o adaptador Supabase como "prisma" para manter compatibilidade
+export const prisma = supabaseAdapter;

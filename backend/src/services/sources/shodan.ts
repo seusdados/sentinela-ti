@@ -238,7 +238,7 @@ export async function buscarInfraestrutura(dominio: string, chaveApi: string): P
     const temServicosAltoRisco = servicos.some(s => isServicoAltoRisco(s.port, s.product || ''));
     
     // Usar apenas CRITICO ou ALTO para achados significativos
-    let nivelRisco = NivelRisco.ALTO;
+    let nivelRisco: typeof NivelRisco[keyof typeof NivelRisco] = NivelRisco.ALTO;
     if (temVulnCritica || temVulnExplorada) {
       nivelRisco = NivelRisco.CRITICO;
     } else if (temVulnerabilidades) {

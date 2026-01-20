@@ -65,6 +65,16 @@ const PROVEDORES_INFO: Record<string, { nome: string; descricao: string; urlCada
     descricao: 'Busca em vazamentos e arquivos históricos da internet. Acesso a dados de breaches indexados.',
     urlCadastro: 'https://intelx.io/signup',
   },
+  HUDSON_ROCK: {
+    nome: 'Hudson Rock (Cavalier)',
+    descricao: 'Detecção de infostealers e credenciais comprometidas. Identifica funcionários com máquinas infectadas por malware.',
+    urlCadastro: 'https://cavalier.hudsonrock.com/',
+  },
+  PSBDMP: {
+    nome: 'Pastebin Dumps',
+    descricao: 'Monitoramento de pastes e dumps em sites como Pastebin. Detecta vazamentos de dados em tempo real.',
+    urlCadastro: '',
+  },
 };
 
 export default function ConfiguracoesPage() {
@@ -160,14 +170,14 @@ export default function ConfiguracoesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {provedores.map((prov) => {
-            const info = PROVEDORES_INFO[prov.provedor] || { 
-              nome: prov.provedor, 
-              descricao: 'Fonte de inteligência de ameaças',
+            const info = PROVEDORES_INFO[prov.id] || { 
+              nome: prov.nome || prov.id, 
+              descricao: prov.descricao || 'Fonte de inteligência de ameaças',
               urlCadastro: '' 
             };
             
             return (
-              <div key={prov.provedor} className="card">
+              <div key={prov.id} className="card">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
@@ -197,27 +207,27 @@ export default function ConfiguracoesPage() {
                 <div className="flex items-center gap-2">
                   {prov.configurada ? (
                     <>
-                      <button
-                        onClick={() => {
-                          setModalAberto(prov.provedor);
-                          setNovaChave('');
-                          setErro('');
-                        }}
-                        className="btn btn-secondary btn-sm flex-1"
-                      >
-                        Atualizar Chave
-                      </button>
-                      <button
-                        onClick={() => removerChave(prov.provedor)}
-                        className="btn btn-ghost btn-sm text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    <button
+                      onClick={() => {
+                        setModalAberto(prov.id);
+                        setNovaChave('');
+                        setErro('');
+                      }}
+                      className="btn btn-secondary btn-sm flex-1"
+                    >
+                      Atualizar Chave
+                    </button>
+                    <button
+                      onClick={() => removerChave(prov.id)}
+                      className="btn btn-ghost btn-sm text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                     </>
                   ) : (
                     <button
                       onClick={() => {
-                        setModalAberto(prov.provedor);
+                        setModalAberto(prov.id);
                         setNovaChave('');
                         setErro('');
                       }}

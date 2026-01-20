@@ -10,7 +10,7 @@ import { FonteInformacao, NivelRisco, TipoEntidade, StatusExecucaoFonte } from '
 
 export interface AchadoCandidato {
   fonte: FonteInformacao;
-  nivelRisco: NivelRisco;
+  nivelRisco: NivelRisco | 'CRITICO' | 'ALTO' | 'MEDIO' | 'BAIXO' | 'INFORMATIVO';
   tipo: string;
   tipoEntidade: TipoEntidade;
   entidade: string;
