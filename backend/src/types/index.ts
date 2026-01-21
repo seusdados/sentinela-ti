@@ -2,7 +2,25 @@
 // SENTINELA - Tipos e Interfaces TypeScript
 // ============================================================================
 
-import { FonteInformacao, NivelRisco, TipoEntidade, StatusExecucaoFonte } from '@prisma/client';
+// Enums locais (sem dependência do Prisma)
+export type FonteInformacao = 
+  | 'HIBP' 
+  | 'VIRUSTOTAL' 
+  | 'SHODAN' 
+  | 'LEAKIX' 
+  | 'OTX' 
+  | 'ABUSEIPDB' 
+  | 'URLSCAN' 
+  | 'PASTEBIN' 
+  | 'GITHUB' 
+  | 'INTELLIGENCEX' 
+  | 'HUDSONROCK';
+
+export type NivelRisco = 'CRITICO' | 'ALTO' | 'MEDIO' | 'BAIXO' | 'INFORMATIVO';
+
+export type TipoEntidade = 'DOMINIO' | 'EMAIL' | 'IP' | 'URL' | 'HASH' | 'CREDENCIAL' | 'OUTRO';
+
+export type StatusExecucaoFonte = 'PENDENTE' | 'EXECUTANDO' | 'SUCESSO' | 'ERRO' | 'TIMEOUT' | 'LIMITE_TAXA';
 
 // ============================================================================
 // RESULTADO DE FONTE DE INTELIGÊNCIA
@@ -10,7 +28,7 @@ import { FonteInformacao, NivelRisco, TipoEntidade, StatusExecucaoFonte } from '
 
 export interface AchadoCandidato {
   fonte: FonteInformacao;
-  nivelRisco: NivelRisco | 'CRITICO' | 'ALTO' | 'MEDIO' | 'BAIXO' | 'INFORMATIVO';
+  nivelRisco: NivelRisco;
   tipo: string;
   tipoEntidade: TipoEntidade;
   entidade: string;

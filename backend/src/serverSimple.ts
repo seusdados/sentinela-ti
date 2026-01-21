@@ -36,6 +36,7 @@ app.use(express.json({ limit: '10mb' }));
 interface UsuarioAutenticado {
   id: string;
   email: string;
+  nome?: string;
   organizacaoId: string;
   perfil: string;
 }
