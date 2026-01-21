@@ -730,15 +730,20 @@ app.post('/api/varreduras', autenticar, async (req: Request, res: Response) => {
 // Endpoint para calcular score de um achado
 app.post('/api/scoring/calcular', autenticar, async (req: Request, res: Response) => {
   try {
-    const { fonte, tipo, dados } = req.body;
+    const { fonte, tipo, dados, source, type, count, dataTypes, isPubliclyExposed } = req.body;
+    
+    // Suportar ambos os formatos de entrada
+    const actualFonte = fonte || source || '';
+    const actualTipo = tipo || type || '';
+    const actualDados = dados || { count, dataTypes, isPubliclyExposed, titulo: actualTipo, descricao: '' };
     
     // Classificar o achado
     const vulnClass = classifyFinding({
-      fonte: fonte || '',
-      titulo: dados.titulo || tipo || '',
-      descricao: dados.descricao || '',
-      nivelRisco: dados.nivelRisco || 'MEDIO',
-      tipo: tipo || '',
+      fonte: actualFonte,
+      titulo: actualDados.titulo || actualTipo || '',
+      descricao: actualDados.descricao || '',
+      nivelRisco: actualDados.nivelRisco || 'MEDIO',
+      tipo: actualTipo,
     });
     const vulnClassDetails = getVulnClassDetails(vulnClass);
     
@@ -747,7 +752,7 @@ app.post('/api/scoring/calcular', autenticar, async (req: Request, res: Response
       exposure: vulnClassDetails.defaultExposure,
       exploitability: vulnClassDetails.defaultExploitability,
       dataSensitivity: vulnClassDetails.defaultDataSensitivity,
-      scale: Math.min(1, (dados.count || 1) / 100), // Normalizar para 0-1
+      scale: Math.min(1, (actualDados.count || 1) / 100), // Normalizar para 0-1
       confidence: 0.85 // Confiança padrão
     };
     
