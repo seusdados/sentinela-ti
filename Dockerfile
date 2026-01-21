@@ -9,15 +9,15 @@ COPY backend/package*.json ./backend/
 COPY frontend/package*.json ./frontend/
 
 # Instalar dependências raiz
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Instalar dependências do backend
 WORKDIR /app/backend
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Instalar dependências do frontend
 WORKDIR /app/frontend
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Voltar para raiz e copiar código
 WORKDIR /app
