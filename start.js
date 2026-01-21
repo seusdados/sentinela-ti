@@ -7,7 +7,9 @@ const path = require('path');
 const fs = require('fs');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 
+// Railway define PORT como a porta pública, usamos ela para o servidor principal
 const PORT = process.env.PORT || 3000;
+// Backend roda internamente em uma porta diferente
 const BACKEND_PORT = 3001;
 
 // Verificar se o diretório dist existe
@@ -22,7 +24,8 @@ if (fs.existsSync(distPath)) {
 console.log('Iniciando backend na porta', BACKEND_PORT);
 const backend = spawn('npx', ['tsx', 'src/serverSimple.ts'], {
   cwd: path.join(__dirname, 'backend'),
-  env: { ...process.env, PORT: BACKEND_PORT },
+  // IMPORTANTE: Passar BACKEND_PORT para o backend, não PORT
+  env: { ...process.env, PORT: String(BACKEND_PORT) },
   stdio: 'inherit'
 });
 
@@ -60,10 +63,11 @@ setTimeout(() => {
     }
   });
 
+  // IMPORTANTE: Usar PORT (do Railway) para o servidor principal
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Sentinela TI rodando na porta ${PORT}`);
     console.log(`Frontend: http://localhost:${PORT}`);
-    console.log(`Backend API: http://localhost:${BACKEND_PORT}`);
+    console.log(`Backend API interno: http://localhost:${BACKEND_PORT}`);
   });
 }, 3000);
 
