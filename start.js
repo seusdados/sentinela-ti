@@ -1,79 +1,39 @@
 // Sentinela TI - Script de inicialização para Railway
-// Inicia o backend e serve o frontend
+// Agora o backend serve tanto a API quanto o frontend estático
 
 const { spawn } = require('child_process');
-const express = require('express');
 const path = require('path');
-const fs = require('fs');
-const { createProxyMiddleware } = require('http-proxy-middleware');
 
-// Railway define PORT como a porta pública, usamos ela para o servidor principal
+// Railway define PORT via variável de ambiente
 const PORT = process.env.PORT || 3000;
-// Backend roda internamente em uma porta diferente
-const BACKEND_PORT = 3001;
-
-// Verificar se o diretório dist existe
-const distPath = path.join(__dirname, 'frontend/dist');
-console.log('Verificando diretório dist:', distPath);
-console.log('Diretório existe:', fs.existsSync(distPath));
-if (fs.existsSync(distPath)) {
-  console.log('Conteúdo do dist:', fs.readdirSync(distPath));
-}
+console.log('PORT do Railway:', PORT);
 
 // Iniciar o backend usando tsx (TypeScript executor)
-console.log('Iniciando backend na porta', BACKEND_PORT);
+// O backend agora serve tanto a API quanto os arquivos estáticos do frontend
+console.log('Iniciando servidor Sentinela...');
 const backend = spawn('npx', ['tsx', 'src/serverSimple.ts'], {
   cwd: path.join(__dirname, 'backend'),
-  // IMPORTANTE: Passar BACKEND_PORT para o backend, não PORT
-  env: { ...process.env, PORT: String(BACKEND_PORT) },
+  env: { ...process.env },  // Passar todas as variáveis de ambiente, incluindo PORT
   stdio: 'inherit'
 });
 
 backend.on('error', (err) => {
-  console.error('Erro ao iniciar backend:', err);
+  console.error('Erro ao iniciar servidor:', err);
+  process.exit(1);
 });
 
-// Aguardar backend iniciar e então iniciar o frontend server
-setTimeout(() => {
-  const app = express();
-
-  // Proxy para API backend
-  app.use('/api', createProxyMiddleware({
-    target: `http://localhost:${BACKEND_PORT}`,
-    changeOrigin: true
-  }));
-
-  // Servir arquivos estáticos do frontend
-  const staticPath = path.join(__dirname, 'frontend/dist');
-  console.log('Servindo arquivos estáticos de:', staticPath);
-  
-  app.use(express.static(staticPath, {
-    index: 'index.html',
-    fallthrough: true
-  }));
-
-  // SPA fallback - servir index.html para todas as rotas não-API
-  app.get('/{*path}', (req, res) => {
-    const indexPath = path.join(staticPath, 'index.html');
-    console.log('Fallback para:', indexPath);
-    if (fs.existsSync(indexPath)) {
-      res.sendFile(indexPath);
-    } else {
-      res.status(404).send('index.html não encontrado');
-    }
-  });
-
-  // IMPORTANTE: Usar PORT (do Railway) para o servidor principal
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Sentinela TI rodando na porta ${PORT}`);
-    console.log(`Frontend: http://localhost:${PORT}`);
-    console.log(`Backend API interno: http://localhost:${BACKEND_PORT}`);
-  });
-}, 3000);
+backend.on('exit', (code) => {
+  console.log('Servidor encerrado com código:', code);
+  process.exit(code || 0);
+});
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('Recebido SIGTERM, encerrando...');
   backend.kill();
-  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('Recebido SIGINT, encerrando...');
+  backend.kill();
 });

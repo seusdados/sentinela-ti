@@ -6,6 +6,8 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import path from 'path';
+import fs from 'fs';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -874,6 +876,38 @@ app.post('/api/lgpd/check-notification', autenticar, async (req: Request, res: R
     res.status(500).json({ erro: erro.message });
   }
 });
+
+// ============================================================================
+// SERVIR FRONTEND ESTÁTICO
+// ============================================================================
+
+// Caminho para os arquivos do frontend (relativo ao backend)
+const frontendPath = path.join(__dirname, '../../frontend/dist');
+console.log('Frontend path:', frontendPath);
+console.log('Frontend exists:', fs.existsSync(frontendPath));
+
+if (fs.existsSync(frontendPath)) {
+  console.log('Frontend files:', fs.readdirSync(frontendPath));
+  
+  // Servir arquivos estáticos do frontend
+  app.use(express.static(frontendPath));
+  
+  // SPA fallback - todas as rotas não-API servem index.html
+  app.get('*', (req: Request, res: Response) => {
+    // Ignorar rotas de API
+    if (req.path.startsWith('/api')) {
+      res.status(404).json({ erro: 'Endpoint não encontrado' });
+      return;
+    }
+    
+    const indexPath = path.join(frontendPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath);
+    } else {
+      res.status(404).send('Frontend não encontrado');
+    }
+  });
+}
 
 // Iniciar servidor
 app.listen(PORT, () => {
