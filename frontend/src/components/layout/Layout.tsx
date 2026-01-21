@@ -17,6 +17,7 @@ import {
   Shield,
   Bell,
   ChevronDown,
+  Brain,
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -24,6 +25,7 @@ const navegacao = [
   { href: '/dashboard', label: 'Painel Geral', icone: LayoutDashboard },
   { href: '/empresas', label: 'Empresas Monitoradas', icone: Building2 },
   { href: '/varreduras', label: 'Varreduras', icone: Radar },
+  { href: '/inteligencia', label: 'Inteligência', icone: Brain },
   { href: '/configuracoes', label: 'Configurações', icone: Settings },
   { href: '/usuarios', label: 'Usuários', icone: Users },
 ];

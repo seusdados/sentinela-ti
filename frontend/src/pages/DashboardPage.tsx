@@ -18,6 +18,9 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  Brain,
+  Scale,
+  Target,
 } from 'lucide-react';
 import {
   PieChart,
@@ -183,6 +186,38 @@ export default function DashboardPage() {
           <div className="text-sm text-gray-500 mt-1">Achados de risco alto</div>
           <div className="text-xs text-orange-600 font-medium mt-2">
             Prioridade elevada
+          </div>
+        </div>
+      </div>
+      
+      {/* Card de Inteligência de Ameaças */}
+      <div className="card bg-gradient-to-br from-primary-50 to-purple-50 border-primary-200">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-primary-100 flex items-center justify-center">
+              <Brain className="w-7 h-7 text-primary-600" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Inteligência de Ameaças</h3>
+              <p className="text-sm text-gray-600">Sistema de classificação, scoring e conformidade LGPD</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200">
+              <Target className="w-4 h-4 text-amber-600" />
+              <span className="text-sm font-medium text-gray-700">Scoring 5 Eixos</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200">
+              <ShieldAlert className="w-4 h-4 text-red-600" />
+              <span className="text-sm font-medium text-gray-700">8 VulnClasses</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200">
+              <Scale className="w-4 h-4 text-purple-600" />
+              <span className="text-sm font-medium text-gray-700">LGPD Crosswalk</span>
+            </div>
+            <Link to="/inteligencia" className="btn btn-primary btn-sm">
+              Acessar <ArrowRight className="w-4 h-4" />
+            </Link>
           </div>
         </div>
       </div>

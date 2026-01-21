@@ -18,6 +18,7 @@ import VarredurasPage from './pages/VarredurasPage';
 import VarreduraDetalhePage from './pages/VarreduraDetalhePage';
 import ConfiguracoesPage from './pages/ConfiguracoesPage';
 import UsuariosPage from './pages/UsuariosPage';
+import InteligenciaPage from './pages/InteligenciaPage';
 
 // Componente de rota protegida
 function RotaProtegida({ children }: { children: React.ReactNode }) {
@@ -69,6 +70,7 @@ export default function App() {
                 <Route path="/varreduras/:id" element={<VarreduraDetalhePage />} />
                 <Route path="/configuracoes" element={<ConfiguracoesPage />} />
                 <Route path="/usuarios" element={<UsuariosPage />} />
+                <Route path="/inteligencia" element={<InteligenciaPage />} />
               </Routes>
             </Layout>
           </RotaProtegida>

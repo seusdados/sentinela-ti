@@ -10,6 +10,71 @@ interface RequestConfig {
   headers?: Record<string, string>;
 }
 
+// Tipos para VulnClasses e Scoring
+export interface VulnClass {
+  class: string;
+  name: string;
+  description: string;
+  severity: 'CRITICO' | 'ALTO' | 'MEDIO' | 'BAIXO';
+  indicators: string[];
+  sources: string[];
+  defaultExposure: number;
+  defaultExploitability: number;
+  defaultDataSensitivity: number;
+  lgpd: {
+    articles: string[];
+    notificationRequired: boolean;
+  };
+}
+
+export interface ScoreAxes {
+  exposure: number;
+  exploitability: number;
+  dataSensitivity: number;
+  scale: number;
+  confidence: number;
+}
+
+export interface ScoringResult {
+  vulnClass: string;
+  vulnClassDetails: VulnClass;
+  scoreAxes: ScoreAxes;
+  scoreFinal: number;
+  riskLevel: {
+    level: string;
+    minScore: number;
+    maxScore: number;
+    color: string;
+    hexColor: string;
+    label: string;
+    description: string;
+  };
+  lgpd: {
+    articles: string[];
+    anpdCriteria: string[];
+    notificationRequired: boolean;
+    deadlineDays: number | null;
+    recommendations: string[];
+  };
+}
+
+export interface LGPDCrosswalk {
+  vulnClass: string;
+  applicableArticles: Array<{
+    number: string;
+    title: string;
+    description: string;
+    relevance: string;
+  }>;
+  anpdCriteria: Array<{
+    name: string;
+    description: string;
+    requiresNotification: boolean;
+  }>;
+  requiresANPDNotification: boolean;
+  recommendations: string[];
+}
+
 class ApiService {
   private token: string | null = null;
 
@@ -129,7 +194,7 @@ class ApiService {
     return this.request<any>('/varreduras', { method: 'POST', body: dados });
   }
 
-  // Configurações
+  // Configurações - Chaves de API
   getChavesApi() {
     return this.request<any>('/chaves-api');
   }
@@ -154,6 +219,62 @@ class ApiService {
 
   criarUsuario(dados: any) {
     return this.request<any>('/usuarios', { method: 'POST', body: dados });
+  }
+
+  // ============================================================================
+  // NOVAS APIs - VulnClasses, Scoring e LGPD
+  // ============================================================================
+
+  // VulnClasses - Listar todas
+  getVulnClasses() {
+    return this.request<{ vulnClasses: VulnClass[] }>('/vulnclasses');
+  }
+
+  // VulnClass - Detalhes de uma classe específica
+  getVulnClass(vulnClass: string) {
+    return this.request<VulnClass & { lgpd: LGPDCrosswalk }>(`/vulnclass/${vulnClass}`);
+  }
+
+  // Scoring - Calcular score de um achado
+  calcularScoring(dados: {
+    fonte: string;
+    tipo: string;
+    dados: {
+      titulo: string;
+      descricao: string;
+      nivelRisco?: string;
+      count?: number;
+      dataTypes?: string[];
+      isPubliclyExposed?: boolean;
+    };
+  }) {
+    return this.request<ScoringResult>('/scoring/calcular', {
+      method: 'POST',
+      body: dados,
+    });
+  }
+
+  // LGPD - Crosswalk completo para uma VulnClass
+  getLGPDCrosswalk(vulnClass: string) {
+    return this.request<LGPDCrosswalk>(`/lgpd/crosswalk/${vulnClass}`);
+  }
+
+  // LGPD - Verificar necessidade de notificação ANPD
+  verificarNotificacaoANPD(dados: {
+    vulnClass: string;
+    scoreFinal?: number;
+    recordCount?: number;
+  }) {
+    return this.request<{
+      notificationRequired: boolean;
+      deadlineDays: number | null;
+      articles: string[];
+      anpdCriteria: string[];
+      recommendations: string[];
+    }>('/lgpd/check-notification', {
+      method: 'POST',
+      body: dados,
+    });
   }
 }
 

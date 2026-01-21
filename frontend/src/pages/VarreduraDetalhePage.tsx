@@ -27,6 +27,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import RiskScoreGauge, { RiskScoreBar } from '../components/RiskScoreGauge';
+import ScoringAxesChart, { ScoringAxesMini } from '../components/ScoringAxesChart';
+import LGPDCrosswalk, { LGPDBadge } from '../components/LGPDCrosswalk';
 import { api } from '../services/api';
 
 const NOMES_RISCO = {
