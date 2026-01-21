@@ -34,9 +34,14 @@ setTimeout(() => {
   // Servir arquivos estáticos do frontend
   app.use(express.static(path.join(__dirname, 'frontend/dist')));
 
-  // SPA fallback
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
+  // SPA fallback - usando sintaxe compatível com path-to-regexp v8+
+  app.use((req, res, next) => {
+    // Se não for uma rota de API e o arquivo não existir, servir index.html
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
+    } else {
+      next();
+    }
   });
 
   app.listen(PORT, '0.0.0.0', () => {
