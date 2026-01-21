@@ -4,10 +4,19 @@
 const { spawn } = require('child_process');
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 
 const PORT = process.env.PORT || 3000;
 const BACKEND_PORT = 3001;
+
+// Verificar se o diretório dist existe
+const distPath = path.join(__dirname, 'frontend/dist');
+console.log('Verificando diretório dist:', distPath);
+console.log('Diretório existe:', fs.existsSync(distPath));
+if (fs.existsSync(distPath)) {
+  console.log('Conteúdo do dist:', fs.readdirSync(distPath));
+}
 
 // Iniciar o backend usando tsx (TypeScript executor)
 console.log('Iniciando backend na porta', BACKEND_PORT);
@@ -32,15 +41,22 @@ setTimeout(() => {
   }));
 
   // Servir arquivos estáticos do frontend
-  app.use(express.static(path.join(__dirname, 'frontend/dist')));
+  const staticPath = path.join(__dirname, 'frontend/dist');
+  console.log('Servindo arquivos estáticos de:', staticPath);
+  
+  app.use(express.static(staticPath, {
+    index: 'index.html',
+    fallthrough: true
+  }));
 
-  // SPA fallback - usando sintaxe compatível com path-to-regexp v8+
-  app.use((req, res, next) => {
-    // Se não for uma rota de API e o arquivo não existir, servir index.html
-    if (!req.path.startsWith('/api')) {
-      res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
+  // SPA fallback - servir index.html para todas as rotas não-API
+  app.get('/{*path}', (req, res) => {
+    const indexPath = path.join(staticPath, 'index.html');
+    console.log('Fallback para:', indexPath);
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath);
     } else {
-      next();
+      res.status(404).send('index.html não encontrado');
     }
   });
 
