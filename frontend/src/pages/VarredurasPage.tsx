@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Radar,
   Search,
@@ -14,6 +14,8 @@ import {
   AlertTriangle,
   Building2,
   Eye,
+  Plus,
+  Play,
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -47,12 +49,24 @@ function calcularDuracao(inicio?: string, fim?: string) {
 export default function VarredurasPage() {
   const [searchParams] = useSearchParams();
   const [varreduras, setVarreduras] = useState<any[]>([]);
+  const [empresas, setEmpresas] = useState<any[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [status, setStatus] = useState(searchParams.get('status') || '');
+  const [modalNovaVarredura, setModalNovaVarredura] = useState(false);
   
   useEffect(() => {
     carregarVarreduras();
+    carregarEmpresas();
   }, [status]);
+  
+  const carregarEmpresas = async () => {
+    try {
+      const resposta = await api.getEmpresas({});
+      setEmpresas(resposta.empresas || []);
+    } catch (erro) {
+      console.error('Erro ao carregar empresas:', erro);
+    }
+  };
   
   const carregarVarreduras = async () => {
     setCarregando(true);
@@ -91,9 +105,15 @@ export default function VarredurasPage() {
   return (
     <div className="space-y-6">
       {/* Cabeçalho */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Varreduras</h1>
-        <p className="text-gray-500 mt-1">Histórico e status das varreduras de segurança</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Varreduras</h1>
+          <p className="text-gray-500 mt-1">Histórico e status das varreduras de segurança</p>
+        </div>
+        <button onClick={() => setModalNovaVarredura(true)} className="btn btn-primary">
+          <Plus className="w-4 h-4" />
+          Nova Varredura
+        </button>
       </div>
       
       {/* Filtros */}
@@ -196,6 +216,138 @@ export default function VarredurasPage() {
             </table>
           </div>
         )}
+      </div>
+      
+      {/* Modal Nova Varredura */}
+      {modalNovaVarredura && (
+        <ModalNovaVarredura
+          empresas={empresas}
+          onClose={() => setModalNovaVarredura(false)}
+          onSuccess={() => {
+            setModalNovaVarredura(false);
+            carregarVarreduras();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Modal para iniciar nova varredura
+function ModalNovaVarredura({ empresas, onClose, onSuccess }: { empresas: any[]; onClose: () => void; onSuccess: () => void }) {
+  const navigate = useNavigate();
+  const [empresaId, setEmpresaId] = useState('');
+  const [escopo, setEscopo] = useState('COMPLETO');
+  const [varreduraProfunda, setVarreduraProfunda] = useState(true);
+  const [iniciando, setIniciando] = useState(false);
+  const [erro, setErro] = useState('');
+  
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!empresaId) {
+      setErro('Selecione uma empresa');
+      return;
+    }
+    
+    setIniciando(true);
+    setErro('');
+    
+    try {
+      const resposta = await api.criarVarredura({
+        empresaId,
+        escopo,
+        varreduraProfunda,
+      });
+      onSuccess();
+      navigate(`/varreduras/${resposta.varredura.id}`);
+    } catch (err: any) {
+      setErro(err.message || 'Erro ao iniciar varredura');
+      setIniciando(false);
+    }
+  };
+  
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-slide-up">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center">
+            <Radar className="w-5 h-5 text-primary-600" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">Nova Varredura</h2>
+            <p className="text-sm text-gray-500">Inicie uma varredura de segurança</p>
+          </div>
+        </div>
+        
+        {erro && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            {erro}
+          </div>
+        )}
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="label">Empresa</label>
+            <select
+              value={empresaId}
+              onChange={(e) => setEmpresaId(e.target.value)}
+              className="input"
+              required
+            >
+              <option value="">Selecione uma empresa...</option>
+              {empresas.map((emp) => (
+                <option key={emp.id} value={emp.id}>{emp.nome}</option>
+              ))}
+            </select>
+          </div>
+          
+          <div>
+            <label className="label">Escopo da Varredura</label>
+            <select
+              value={escopo}
+              onChange={(e) => setEscopo(e.target.value)}
+              className="input"
+            >
+              <option value="COMPLETO">Completo - Todas as fontes</option>
+              <option value="RAPIDO">Rápido - Fontes principais</option>
+              <option value="CUSTOMIZADO">Customizado - Selecionar fontes</option>
+            </select>
+          </div>
+          
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+            <input
+              type="checkbox"
+              id="varreduraProfunda"
+              checked={varreduraProfunda}
+              onChange={(e) => setVarreduraProfunda(e.target.checked)}
+              className="w-4 h-4 text-primary-600 rounded"
+            />
+            <label htmlFor="varreduraProfunda" className="flex-1">
+              <span className="font-medium text-gray-900">Varredura Profunda</span>
+              <p className="text-xs text-gray-500">Inclui análise de subdomínios e serviços expostos</p>
+            </label>
+          </div>
+          
+          <div className="flex gap-3 pt-4">
+            <button type="button" onClick={onClose} className="btn btn-secondary flex-1">
+              Cancelar
+            </button>
+            <button type="submit" disabled={iniciando} className="btn btn-primary flex-1">
+              {iniciando ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  Iniciando...
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  Iniciar Varredura
+                </>
+              )}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

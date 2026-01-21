@@ -60,16 +60,7 @@ const PROVEDORES_INFO: Record<string, { nome: string; descricao: string; urlCada
     descricao: 'Busca de secrets e credenciais em código público. Encontra senhas e chaves de API expostas em repositórios.',
     urlCadastro: 'https://github.com/settings/tokens',
   },
-  INTELX: {
-    nome: 'Intelligence X',
-    descricao: 'Busca em vazamentos e arquivos históricos da internet. Acesso a dados de breaches indexados.',
-    urlCadastro: 'https://intelx.io/signup',
-  },
-  HUDSON_ROCK: {
-    nome: 'Hudson Rock (Cavalier)',
-    descricao: 'Detecção de infostealers e credenciais comprometidas. Identifica funcionários com máquinas infectadas por malware.',
-    urlCadastro: 'https://cavalier.hudsonrock.com/',
-  },
+  // INTELX e HUDSON_ROCK removidos - APIs não disponíveis
   PSBDMP: {
     nome: 'Pastebin Dumps',
     descricao: 'Monitoramento de pastes e dumps em sites como Pastebin. Detecta vazamentos de dados em tempo real.',

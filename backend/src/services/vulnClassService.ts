@@ -44,7 +44,7 @@ export const VULN_CLASS_DEFINITIONS: Record<VulnClass, VulnClassDetails> = {
       'Logs de infostealers (VIDAR, RedLine, StealC)',
       'Dumps de banco de dados com hashes'
     ],
-    sources: ['Hudson Rock', 'Have I Been Pwned', 'GitHub', 'LeakIX', 'Intelligence X'],
+    sources: ['Have I Been Pwned', 'GitHub', 'LeakIX', 'VirusTotal'],
     defaultExposure: 0.95,
     defaultExploitability: 0.90,
     defaultDataSensitivity: 1.0
@@ -152,7 +152,7 @@ export const VULN_CLASS_DEFINITIONS: Record<VulnClass, VulnClassDetails> = {
       'Tentativas de login suspeitas',
       'Credenciais corporativas em dumps'
     ],
-    sources: ['Hudson Rock', 'Have I Been Pwned', 'LeakIX', 'Intelligence X'],
+    sources: ['Have I Been Pwned', 'LeakIX', 'VirusTotal', 'AbuseIPDB'],
     defaultExposure: 0.75,
     defaultExploitability: 0.80,
     defaultDataSensitivity: 0.85
@@ -170,7 +170,7 @@ export const VULN_CLASS_DEFINITIONS: Record<VulnClass, VulnClassDetails> = {
       'Certificados de terceiros expirados',
       'Dependências vulneráveis'
     ],
-    sources: ['crt.sh', 'Hudson Rock', 'Shodan', 'GitHub'],
+    sources: ['crt.sh', 'Shodan', 'GitHub', 'URLScan'],
     defaultExposure: 0.60,
     defaultExploitability: 0.55,
     defaultDataSensitivity: 0.50

@@ -472,8 +472,7 @@ app.get('/api/chaves-api', autenticar, async (req: Request, res: Response) => {
       { id: 'URLSCAN', nome: 'URLScan', descricao: 'Análise de URLs' },
       { id: 'PSBDMP', nome: 'Pastebin Dumps', descricao: 'Monitoramento de pastes' },
       { id: 'GITHUB', nome: 'GitHub', descricao: 'Busca de código vazado' },
-      { id: 'INTELX', nome: 'Intelligence X', descricao: 'Inteligência de ameaças avançada' },
-      { id: 'HUDSON_ROCK', nome: 'Hudson Rock (Cavalier)', descricao: 'Detecção de infostealers' },
+      // INTELX e HUDSON_ROCK removidos - APIs não disponíveis
     ];
     
     const chavesMap = new Map((chaves || []).map((c: any) => [c.provedor, c]));
@@ -558,6 +557,108 @@ app.delete('/api/chaves-api/:provedor', autenticar, async (req: Request, res: Re
     res.json({ sucesso: true });
   } catch (erro: any) {
     console.error('Erro ao remover chave:', erro);
+    res.status(500).json({ erro: erro.message });
+  }
+});
+
+// Listar todos os usuários da organização
+app.get('/api/usuarios', autenticar, async (req: Request, res: Response) => {
+  try {
+    const orgId = req.usuario!.organizacaoId;
+    
+    // Buscar membros da organização com dados dos usuários
+    const { data: membros, error } = await supabase
+      .from('membros')
+      .select('*, usuarios(*)')
+      .eq('organizacao_id', orgId);
+    
+    if (error) throw error;
+    
+    const usuarios = (membros || []).map((m: any) => ({
+      id: m.usuarios?.id,
+      nome: m.usuarios?.nome,
+      email: m.usuarios?.email,
+      perfil: m.perfil,
+      ativo: m.usuarios?.ativo,
+      ultimoAcessoEm: m.usuarios?.ultimo_acesso_em,
+      criadoEm: m.usuarios?.criado_em,
+    }));
+    
+    res.json({ usuarios });
+  } catch (erro: any) {
+    console.error('Erro ao listar usuários:', erro);
+    res.status(500).json({ erro: erro.message });
+  }
+});
+
+// Criar novo usuário
+app.post('/api/usuarios', autenticar, async (req: Request, res: Response) => {
+  try {
+    // Verificar se é admin
+    if (req.usuario!.perfil !== 'ADMINISTRADOR') {
+      res.status(403).json({ erro: 'Apenas administradores podem criar usuários' });
+      return;
+    }
+    
+    const schema = z.object({
+      nome: z.string().min(2),
+      email: z.string().email(),
+      senha: z.string().min(8),
+      perfil: z.enum(['ADMINISTRADOR', 'ANALISTA', 'VISUALIZADOR']),
+    });
+    
+    const { nome, email, senha, perfil } = schema.parse(req.body);
+    
+    // Verificar se email já existe
+    const { data: existente } = await supabase
+      .from('usuarios')
+      .select('id')
+      .eq('email', email)
+      .single();
+    
+    if (existente) {
+      res.status(400).json({ erro: 'E-mail já cadastrado' });
+      return;
+    }
+    
+    // Hash da senha
+    const senhaHash = await bcrypt.hash(senha, 10);
+    
+    // Criar usuário
+    const { data: novoUsuario, error: userError } = await supabase
+      .from('usuarios')
+      .insert({
+        nome,
+        email,
+        senha_hash: senhaHash,
+        ativo: true,
+      })
+      .select()
+      .single();
+    
+    if (userError) throw userError;
+    
+    // Criar membro na organização
+    const { error: membroError } = await supabase
+      .from('membros')
+      .insert({
+        usuario_id: novoUsuario.id,
+        organizacao_id: req.usuario!.organizacaoId,
+        perfil,
+      });
+    
+    if (membroError) throw membroError;
+    
+    res.status(201).json({
+      usuario: {
+        id: novoUsuario.id,
+        nome: novoUsuario.nome,
+        email: novoUsuario.email,
+        perfil,
+      },
+    });
+  } catch (erro: any) {
+    console.error('Erro ao criar usuário:', erro);
     res.status(500).json({ erro: erro.message });
   }
 });

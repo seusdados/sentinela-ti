@@ -270,7 +270,7 @@ export default function InteligenciaPage() {
                   <option value="VT">VirusTotal</option>
                   <option value="SHODAN">Shodan</option>
                   <option value="LEAKIX">LeakIX</option>
-                  <option value="HUDSON_ROCK">Hudson Rock</option>
+                  
                   <option value="GITHUB">GitHub</option>
                   <option value="URLSCAN">URLScan</option>
                 </select>
