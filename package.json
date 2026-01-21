@@ -1,25 +1,29 @@
 {
   "name": "sentinela-ti",
   "version": "1.0.0",
-  "main": "server.js",
+  "main": "start.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "build": "cd backend && npm install && npm run build && cd ../frontend && npm install && npm run build",
+    "start": "node start.js",
+    "dev": "node start.js"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/seusdados/sentinela-ti.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["threat-intelligence", "security", "lgpd", "scoring"],
+  "author": "SeusDados",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/seusdados/sentinela-ti/issues"
   },
   "homepage": "https://github.com/seusdados/sentinela-ti#readme",
-  "description": "",
+  "description": "Sistema de Threat Intelligence com Scoring 5 Eixos, VulnClasses e LGPD Crosswalk",
   "dependencies": {
     "express": "^5.2.1",
     "http-proxy-middleware": "^3.0.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
