@@ -9,9 +9,9 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const PORT = process.env.PORT || 3000;
 const BACKEND_PORT = 3001;
 
-// Iniciar o backend
+// Iniciar o backend usando tsx (TypeScript executor)
 console.log('Iniciando backend na porta', BACKEND_PORT);
-const backend = spawn('node', ['dist/serverSimple.js'], {
+const backend = spawn('npx', ['tsx', 'src/serverSimple.ts'], {
   cwd: path.join(__dirname, 'backend'),
   env: { ...process.env, PORT: BACKEND_PORT },
   stdio: 'inherit'
