@@ -3,6 +3,9 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+# Instalar tsx globalmente para executar TypeScript
+RUN npm install -g tsx
+
 # Copiar package.json primeiro para cache de dependências
 COPY package*.json ./
 COPY backend/package*.json ./backend/
