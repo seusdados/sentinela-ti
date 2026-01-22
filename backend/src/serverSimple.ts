@@ -816,7 +816,7 @@ app.post('/api/varreduras', autenticar, async (req: Request, res: Response) => {
       .from('varreduras')
       .insert({
         empresa_id: empresaId,
-        status: 'PENDENTE',
+        status: 'AGUARDANDO',
         criado_por_id: userId,
       })
       .select()
