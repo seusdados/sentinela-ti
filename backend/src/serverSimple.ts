@@ -725,7 +725,10 @@ app.get('/api/varreduras', autenticar, async (req: Request, res: Response) => {
       varreduras: (varreduras || []).map((v: any) => ({
         id: v.id,
         empresaId: v.empresa_id,
-        empresa: v.empresas?.nome || 'N/A',
+        empresa: {
+          id: v.empresa_id,
+          nome: v.empresas?.nome || 'N/A',
+        },
         status: v.status,
         totalAchados: v.total_achados || 0,
         achadosCriticos: v.achados_criticos || 0,
