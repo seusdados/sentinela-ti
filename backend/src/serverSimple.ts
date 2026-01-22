@@ -818,6 +818,12 @@ app.post('/api/varreduras', autenticar, async (req: Request, res: Response) => {
         empresa_id: empresaId,
         status: 'AGUARDANDO',
         criado_por_id: userId,
+        dados_entrada: {
+          dominios: dominios || [],
+          escopo: 'COMPLETO',
+          varreduraProfunda: true,
+          criadoEm: new Date().toISOString()
+        }
       })
       .select()
       .single();
