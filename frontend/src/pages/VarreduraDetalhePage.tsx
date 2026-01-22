@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Building2,
@@ -25,6 +25,8 @@ import {
   Code,
   Database,
   Loader2,
+  Play,
+  Radar,
 } from 'lucide-react';
 import RiskScoreGauge, { RiskScoreBar } from '../components/RiskScoreGauge';
 import ScoringAxesChart, { ScoringAxesMini } from '../components/ScoringAxesChart';
@@ -70,12 +72,32 @@ function formatarData(data: string) {
 
 export default function VarreduraDetalhePage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [dados, setDados] = useState<any>(null);
   const [carregando, setCarregando] = useState(true);
   const [abaAtiva, setAbaAtiva] = useState<'achados' | 'fontes'>('achados');
   const [filtroRisco, setFiltroRisco] = useState<string>('');
   const [achadoExpandido, setAchadoExpandido] = useState<string | null>(null);
   const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [iniciandoNovaVarredura, setIniciandoNovaVarredura] = useState(false);
+  
+  const iniciarNovaVarredura = async () => {
+    if (!dados?.varredura?.empresaId) return;
+    setIniciandoNovaVarredura(true);
+    try {
+      const resposta = await api.criarVarredura({
+        empresaId: dados.varredura.empresaId,
+        escopo: 'COMPLETO',
+        varreduraProfunda: true,
+      });
+      navigate(`/varreduras/${resposta.varredura.id}`);
+    } catch (erro) {
+      console.error('Erro ao iniciar nova varredura:', erro);
+      alert('Erro ao iniciar nova varredura. Tente novamente.');
+    } finally {
+      setIniciandoNovaVarredura(false);
+    }
+  };
   
   const baixarRelatorioPdf = async () => {
     setGerandoPdf(true);
@@ -210,25 +232,44 @@ export default function VarreduraDetalhePage() {
             </div>
           </div>
           
-          {varredura.status === 'CONCLUIDA' && (
+          <div className="flex gap-3">
             <button
-              onClick={baixarRelatorioPdf}
-              disabled={gerandoPdf}
-              className="btn btn-primary"
+              onClick={iniciarNovaVarredura}
+              disabled={iniciandoNovaVarredura}
+              className="btn btn-secondary"
             >
-              {gerandoPdf ? (
+              {iniciandoNovaVarredura ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Gerando PDF...
+                  Iniciando...
                 </>
               ) : (
                 <>
-                  <Download className="w-4 h-4" />
-                  Baixar Relatório PDF
+                  <Play className="w-4 h-4" />
+                  Nova Varredura
                 </>
               )}
             </button>
-          )}
+            {varredura.status === 'CONCLUIDA' && (
+              <button
+                onClick={baixarRelatorioPdf}
+                disabled={gerandoPdf}
+                className="btn btn-primary"
+              >
+                {gerandoPdf ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Gerando PDF...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" />
+                    Baixar Relatório PDF
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </div>
         
         {/* Score de Risco */}

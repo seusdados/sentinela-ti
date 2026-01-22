@@ -768,7 +768,10 @@ app.get('/api/varreduras/:id', autenticar, async (req: Request, res: Response) =
       varredura: {
         id: varredura.id,
         empresaId: varredura.empresa_id,
-        empresa: varredura.empresas?.nome || 'N/A',
+        empresa: {
+          id: varredura.empresa_id,
+          nome: varredura.empresas?.nome || 'N/A',
+        },
         dominios: varredura.empresas?.dominios_empresa?.map((d: any) => d.dominio) || [],
         status: varredura.status,
         totalAchados: varredura.total_achados || 0,
